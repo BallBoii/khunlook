@@ -1,0 +1,42 @@
+# Ingestion settings. Paths are relative to the repo root.
+corpus_dir: corpus
+index_dir: index
+cache_dir: ingest/cache
+questions_file: ingest/questions.yaml
+
+embedding:
+  # fake       = free, deterministic hashing embedder (dev/testing only, no network)
+  # openrouter = REAL, PAID embeddings. Only run once the corpus is final:
+  #              python -m ingest estimate --provider openrouter   (free dry run)
+  #              python -m ingest ingest   --provider openrouter   (asks y/N before spending)
+  provider: fake
+
+  fake:
+    model: fake-hash-v1
+    dim: 256
+
+  openrouter:
+    # MUST be the exact model model-service uses for query embeddings at runtime.
+    # Agree on it with the model-service owner and check the slug/dim at openrouter.ai/models.
+    model: CHANGE_ME           # e.g. qwen/qwen3-embedding-8b, google/gemini-embedding-001, openai/text-embedding-3-small
+    dim: 0                     # e.g. 4096, 3072, 1536 - every returned vector is checked against this
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    batch_size: 32
+    max_retries: 5
+
+cleaning:
+  repeated_line_ratio: 0.6     # drop lines that appear on >= 60% of a deck's pages (headers/footers)
+  min_pages_for_repeat: 3      # only apply the repeat rule to decks with at least this many pages
+  # A line that is just the page's own number is always dropped (other bare numbers, like the
+  # "29" in a "SEP / 29" timeline, are kept).
+  drop_patterns:               # whole-line regexes (case-insensitive) that are always dropped
+    - '(page|slide)\s+\d+(\s+of\s+\d+)?'
+    - '.*\(at\)\s*cp\.eng\.chula\.ac\.th.*'  # "kunwadee (AT) cp.eng.chula.ac.th"
+    - '2110415\s+software-defined\s+systems.*'   # course footer
+  empty_page_chars: 30         # warn about pages with less text than this after cleaning
+
+chunking:
+  min_chars: 80                # shorter pages are merged into the next page of the same doc
+  max_chars: 1200              # longer chunks are split on line/bullet boundaries
+  overlap_chars: 150

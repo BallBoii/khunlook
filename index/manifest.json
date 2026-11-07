@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "index_version": "db4f1f08",
+  "embedding_model": "fake-hash-v1",
+  "embedding_dim": 256,
+  "num_chunks": 10,
+  "distance": "cosine",
+  "built_at": "2026-11-07T17:23:02+00:00"
+}

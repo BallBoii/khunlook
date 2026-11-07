@@ -1,0 +1,24 @@
+# Documents that go into the knowledge base.
+#   doc_id       stable id (used in chunk IDs and citations) - never rename after the index is shared
+#   title        shown to users and prefixed to the embedding text
+#   source_file  PDFs live in corpus/raw/, notes (.md) in corpus/notes/
+#   type         slides | notes   (default: inferred from the extension)
+#   page         notes only: the page of the original document this note describes (default 1)
+#
+# Notes are for content that only exists as an image (e.g. the rubric table on page 10 of the
+# project brief). Give them their own doc_id so chunk IDs never collide with the PDF's.
+documents:
+  - doc_id: sds-final-project-2026
+    title: SDS Final Project
+    source_file: SDS_2026_CP_Project-172259-17905648756766.pdf
+    type: slides
+
+  # - doc_id: sds-final-2026-rubric
+  #   title: SDS Final Project - Grading Rubric
+  #   source_file: final-project-rubric.md
+  #   type: notes
+  #   page: 10
+
+  # - doc_id: sds-lec01
+  #   title: SDS Lecture 1 - Introduction
+  #   source_file: sds-lec01-intro.pdf

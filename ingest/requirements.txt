@@ -1,0 +1,6 @@
+# Offline ingestion (laptop only) + test deps for both ingest/ and services/vector-db/
+pymupdf==1.25.5
+numpy==2.2.6
+pyyaml==6.0.2
+httpx==0.28.1
+pytest==8.3.5

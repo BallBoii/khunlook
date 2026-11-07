@@ -1,0 +1,50 @@
+# Eval questions -> index/query_fixtures.jsonl (embedded with the same model as the index).
+# `expected` = every (doc_id, page) whose chunk answers the question; a hit = any of them in the top-k.
+# Questions with an empty `expected` are still embedded (rag-service can use them) but skipped by eval.
+# Add lecture questions here when lecture decks are added to corpus/manifest.yaml.
+questions:
+  - id: q01
+    question: When is the final project demo?
+    expected: [{doc_id: sds-final-project-2026, page: 9}, {doc_id: sds-final-project-2026, page: 10}]
+  - id: q02
+    question: When is the repository submission deadline?
+    expected: [{doc_id: sds-final-project-2026, page: 8}]
+  - id: q03
+    question: How many Raspberry Pis do we need for the project?
+    expected: [{doc_id: sds-final-project-2026, page: 4}, {doc_id: sds-final-project-2026, page: 6}]
+  - id: q04
+    question: What is the minimum number of container images the application must use?
+    expected: [{doc_id: sds-final-project-2026, page: 6}]
+  - id: q05
+    question: What happens during the fault tolerance test?
+    expected: [{doc_id: sds-final-project-2026, page: 9}, {doc_id: sds-final-project-2026, page: 10}]
+  - id: q06
+    question: How many containers must each client request go through?
+    expected: [{doc_id: sds-final-project-2026, page: 6}, {doc_id: sds-final-project-2026, page: 9}, {doc_id: sds-final-project-2026, page: 10}]
+  - id: q07
+    question: How is the final project demo graded?
+    expected: [{doc_id: sds-final-project-2026, page: 10}]
+  - id: q08
+    question: Does the deployment have to be automated from GitHub?
+    expected: [{doc_id: sds-final-project-2026, page: 9}, {doc_id: sds-final-project-2026, page: 10}]
+  - id: q09
+    question: What should we use as the master nodes?
+    expected: [{doc_id: sds-final-project-2026, page: 6}, {doc_id: sds-final-project-2026, page: 11}]
+  - id: q10
+    question: How many people are in a project group?
+    expected: [{doc_id: sds-final-project-2026, page: 4}]
+  - id: q11
+    question: What must the README in our GitHub repo explain?
+    expected: [{doc_id: sds-final-project-2026, page: 8}]
+  - id: q12
+    question: Who needs access to our GitHub repository?
+    expected: [{doc_id: sds-final-project-2026, page: 8}]
+  - id: q13
+    question: Should our application be stateless or stateful?
+    expected: [{doc_id: sds-final-project-2026, page: 7}]
+  - id: q14
+    question: What equipment does each group get?
+    expected: [{doc_id: sds-final-project-2026, page: 4}]
+  - id: q15
+    question: What do we have to do with the equipment after the demo?
+    expected: [{doc_id: sds-final-project-2026, page: 10}]
