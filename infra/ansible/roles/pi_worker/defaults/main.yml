@@ -1,0 +1,2 @@
+kube_minor: v1.34            # match your control plane
+cmdline: /boot/firmware/cmdline.txt
