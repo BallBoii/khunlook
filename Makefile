@@ -1,5 +1,6 @@
-# Data part: offline ingestion + vector-db. Every target is a thin wrapper, so on Windows
-# without make you can run the command on the right directly.
+# Data part: offline ingestion + vector-db. User-facing part: api-gateway + frontend.
+# Every target is a thin wrapper, so on Windows without make you can run the command on the
+# right directly.
 PY        ?= python
 REGISTRY  ?= CHANGE_ME_REGISTRY
 VERSION   ?= 1.0.0
@@ -7,11 +8,15 @@ PLATFORMS ?= linux/arm64,linux/amd64
 IDX       := $(shell $(PY) -c "import json;print(json.load(open('index/manifest.json'))['index_version'])" 2>/dev/null)
 IMAGE     ?= $(REGISTRY)/vector-db:$(VERSION)-idx$(IDX)
 DOCKER_BUILD = docker buildx build -f services/vector-db/Dockerfile -t $(IMAGE)
+GATEWAY_IMAGE  ?= $(REGISTRY)/api-gateway:$(VERSION)
+FRONTEND_IMAGE ?= $(REGISTRY)/frontend:$(VERSION)
+COMPOSE        = docker compose -f deploy/docker/compose.yaml
 
-.PHONY: setup ingest estimate eval validate-index test build-vector-db push-vector-db run-vector-db
+.PHONY: setup ingest estimate eval validate-index test build-vector-db push-vector-db run-vector-db \
+        build-api-gateway push-api-gateway build-frontend push-frontend dev-up dev-down deploy-web
 
 setup:            ## install dev deps
-	$(PY) -m pip install -r ingest/requirements.txt -r services/vector-db/requirements.txt
+	$(PY) -m pip install -r ingest/requirements.txt -r services/vector-db/requirements.txt -r services/api-gateway/requirements.txt
 
 ingest:           ## build index/ (free fake embedder unless PROVIDER=openrouter)
 	$(PY) -m ingest ingest $(if $(PROVIDER),--provider $(PROVIDER))
@@ -26,7 +31,7 @@ validate-index:
 	$(PY) services/vector-db/app/search.py index
 
 test:
-	$(PY) -m pytest ingest/tests services/vector-db/tests -q
+	$(PY) -m pytest ingest/tests services/vector-db/tests services/api-gateway/tests -q
 
 build-vector-db: validate-index   ## local single-arch image
 	$(DOCKER_BUILD) --load .
@@ -36,3 +41,25 @@ push-vector-db: validate-index    ## multi-arch image to the team registry
 
 run-vector-db:
 	docker run --rm -p 8080:8080 -e POD_NAME=local-vector-db $(IMAGE)
+
+# ---- api-gateway + frontend ----------------------------------------------------------------
+build-api-gateway:   ## local single-arch image
+	docker buildx build -f services/api-gateway/Dockerfile --target gateway -t $(GATEWAY_IMAGE) --load .
+
+push-api-gateway:    ## multi-arch image to the team registry
+	docker buildx build -f services/api-gateway/Dockerfile --target gateway -t $(GATEWAY_IMAGE) --platform $(PLATFORMS) --push .
+
+build-frontend:
+	docker buildx build -f services/frontend/Dockerfile -t $(FRONTEND_IMAGE) --load .
+
+push-frontend:
+	docker buildx build -f services/frontend/Dockerfile -t $(FRONTEND_IMAGE) --platform $(PLATFORMS) --push .
+
+dev-up:              ## frontend + 2 gateways + stub rag-service on http://localhost:8080
+	$(COMPOSE) up --build -d
+
+dev-down:
+	$(COMPOSE) down
+
+deploy-web:          ## apply both manifests together (nginx needs the api-gateway Service)
+	kubectl apply -f deploy/k8s/api-gateway/api-gateway.yaml -f deploy/k8s/frontend/frontend.yaml

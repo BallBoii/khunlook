@@ -1,0 +1,82 @@
+# PRODUCTION: api-gateway on the Pi cluster.
+#   Deploy with `make deploy-web` (applies this file and frontend.yaml together).
+#   Before deploying, set the image tag below to the one pushed with `make push-api-gateway`.
+#
+# The only path from the frontend to rag-service: rate limits, timeouts, one safe retry,
+# request IDs, JSON logs and the served-by chain. Stateless (limits live in each replica's
+# memory), so any replica on any Pi can serve any request. Same layout as vector-db.yaml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  labels: {app: api-gateway}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: api-gateway}
+  template:
+    metadata:
+      labels: {app: api-gateway}
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: arm64          # Pi workers only (masters are amd64 VMs)
+      affinity:
+        podAntiAffinity:                   # spread replicas over Pis, but still schedule if Pis are down
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels: {app: api-gateway}
+      tolerations:                         # leave a dead/unplugged node after 20 s instead of 5 min
+        - {key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 20}
+        - {key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 20}
+      containers:
+        - name: api-gateway
+          image: CHANGE_ME_REGISTRY/api-gateway:1.0.0   # pinned tag from `make push-api-gateway`
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - {name: RAG_URL, value: "http://rag-service:8080"}
+            - {name: RATE_PER_MIN, value: "10"}       # per client
+            - {name: RATE_BURST, value: "5"}          # per client
+            - {name: GLOBAL_PER_MIN, value: "30"}     # per replica, protects the LLM budget
+            - {name: MAX_INFLIGHT, value: "8"}        # per replica, protects the Pi's memory
+            - {name: CONNECT_TIMEOUT_S, value: "2"}
+            - {name: CHAT_TIMEOUT_S, value: "45"}
+            - {name: TRACE_TIMEOUT_S, value: "3"}
+            - {name: LOG_LEVEL, value: info}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 128Mi}
+          startupProbe:                    # up to ~30 s for a slow Pi to import FastAPI
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 15
+          readinessProbe:                  # never checks rag-service (see app/main.py readyz)
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  labels: {app: api-gateway}
+spec:
+  type: ClusterIP                          # internal only: browsers reach it through the frontend
+  selector: {app: api-gateway}
+  ports:
+    - {name: http, port: 8080, targetPort: http}

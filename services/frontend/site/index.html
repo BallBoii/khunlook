@@ -1,0 +1,80 @@
+<!doctype html>
+<!-- SDS Course Assistant: the whole UI is this one page. Behaviour in app.js, look in style.css.
+     Interface in English; questions can be asked in English or Thai. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SDS Course Assistant</title>
+  <meta name="description" content="Ask questions about the 2110415 Software-Defined Systems course slides.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Header: logo, title, demo mode switch, then the CU Pink + Engineering maroon stripe -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand">
+        <!-- Faculty of Engineering logo. Hides itself if the file is missing.
+             Use the official file as is: never redraw, recolour or stretch it. -->
+        <img class="logo" id="logo" src="assets/chula-engineering-logo.png"
+             alt="Chula Engineering" width="563" height="80" onerror="this.remove()">
+        <div class="titles">
+          <h1>SDS Course Assistant</h1>
+          <p class="subtitle">2110415 Software-Defined Systems</p>
+          <p class="dept">Department of Computer Engineering</p>
+        </div>
+      </div>
+      <label class="demo-toggle" title="Show the live pod trace for the fault-tolerance demo">
+        <input type="checkbox" id="demo-toggle">
+        <span class="switch" aria-hidden="true"></span>
+        <span>Demo mode</span>
+      </label>
+    </div>
+    <div class="stripe" aria-hidden="true"><span class="pink"></span><span class="maroon"></span></div>
+  </header>
+
+  <!-- "Recovering, retrying…" bar, shown by app.js during a failover retry -->
+  <div class="banner" id="banner" role="status" hidden></div>
+
+  <main class="layout" id="layout">
+    <!-- Chat: messages are added by app.js; the empty state disappears after the first question -->
+    <section class="chat" aria-label="Chat">
+      <div class="messages" id="messages" aria-live="polite">
+        <div class="empty" id="empty">
+          <h2>Ask anything about the course</h2>
+          <p>Answers come only from the course slides, with the page they came from.<br>You can ask in English or Thai.</p>
+          <div class="examples" id="examples">
+            <button type="button">When is the on-site demo?</button>
+            <button type="button">What must the GitHub repo include?</button>
+            <button type="button" lang="th">ต้องส่งอะไรบ้างในวันเดโม</button>
+            <button type="button">How many Raspberry Pis does each group need?</button>
+            <button type="button">What happens if a Raspberry Pi goes offline?</button>
+          </div>
+        </div>
+      </div>
+
+      <form class="composer" id="composer" autocomplete="off">
+        <label class="visually-hidden" for="question">Question</label>
+        <textarea id="question" rows="1" maxlength="1000"
+                  placeholder="Ask about the course…" required></textarea>
+        <button type="submit" id="send">Send</button>
+      </form>
+    </section>
+
+    <!-- Live trace panel: demo mode only. Ticks and the latest pod chain are filled by app.js -->
+    <aside class="trace" id="trace" aria-label="Live trace" hidden>
+      <div class="trace-head">
+        <h2>Live trace</h2>
+        <p>Every 2 s, no LLM call</p>
+      </div>
+      <div class="ticks" id="ticks" aria-label="Recent trace results"></div>
+      <p class="trace-stats" id="trace-stats">–</p>
+      <h3>Latest chain</h3>
+      <ol class="chain-list" id="chain-list"></ol>
+      <p class="trace-note">New pod names appear after a Pi is pulled.</p>
+    </aside>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
