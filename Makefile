@@ -10,13 +10,15 @@ IMAGE     ?= $(REGISTRY)/vector-db:$(VERSION)-idx$(IDX)
 DOCKER_BUILD = docker buildx build -f services/vector-db/Dockerfile -t $(IMAGE)
 GATEWAY_IMAGE  ?= $(REGISTRY)/api-gateway:$(VERSION)
 FRONTEND_IMAGE ?= $(REGISTRY)/frontend:$(VERSION)
+MODEL_LOCAL    ?= model-service:$(VERSION)
+MODEL_IMAGE    ?= $(REGISTRY)/model-service:$(VERSION)
 COMPOSE        = docker compose -f deploy/docker/compose.yaml
 
 .PHONY: setup ingest estimate eval validate-index test build-vector-db push-vector-db run-vector-db \
-        build-api-gateway push-api-gateway build-frontend push-frontend dev-up dev-down deploy-web
+        build-api-gateway push-api-gateway build-frontend push-frontend build-model-service push-model-service run-model-service dev-up dev-down deploy-web
 
 setup:            ## install dev deps
-	$(PY) -m pip install -r ingest/requirements.txt -r services/vector-db/requirements.txt -r services/api-gateway/requirements.txt
+	$(PY) -m pip install -r ingest/requirements.txt -r services/vector-db/requirements.txt -r services/api-gateway/requirements.txt -r services/model/requirements.txt
 
 ingest:           ## build index/ (free fake embedder unless PROVIDER=openrouter)
 	$(PY) -m ingest ingest $(if $(PROVIDER),--provider $(PROVIDER))
@@ -31,7 +33,7 @@ validate-index:
 	$(PY) services/vector-db/app/search.py index
 
 test:
-	$(PY) -m pytest ingest/tests services/vector-db/tests services/api-gateway/tests -q
+	$(PY) -m pytest ingest/tests services/vector-db/tests services/api-gateway/tests services/model/tests -q
 
 build-vector-db: validate-index   ## local single-arch image
 	$(DOCKER_BUILD) --load .
@@ -54,6 +56,16 @@ build-frontend:
 
 push-frontend:
 	docker buildx build -f services/frontend/Dockerfile -t $(FRONTEND_IMAGE) --platform $(PLATFORMS) --push .
+
+# ---- model-service (OpenRouter embeddings + LLM) -------------------------------------------
+build-model-service:   ## local single-arch image
+	docker buildx build -f services/model/Dockerfile -t $(MODEL_LOCAL) --load .
+
+push-model-service:    ## multi-arch image to the team registry
+	docker buildx build -f services/model/Dockerfile -t $(MODEL_IMAGE) --platform $(PLATFORMS) --push .
+
+run-model-service:     ## needs OPENROUTER_API_KEY in your shell; listens on :8081
+	docker run --rm -p 8081:8080 -e OPENROUTER_API_KEY -e POD_NAME=local-model-service $(MODEL_LOCAL)
 
 dev-up:              ## frontend + 2 gateways + stub rag-service on http://localhost:8080
 	$(COMPOSE) up --build -d

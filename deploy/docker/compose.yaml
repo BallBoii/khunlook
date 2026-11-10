@@ -10,6 +10,27 @@
 name: khunlook-dev
 
 services:
+
+  model-service:
+    build:
+      context: ../..
+      dockerfile: services/model/Dockerfile
+    env_file:
+      - ../../services/model/.env
+    expose:
+      - "8080"
+    networks:
+      - khunlook-dev
+
+  vector-db:
+    container_name: vector-db
+    build:
+      context: ../..
+      dockerfile: services/vector-db/Dockerfile
+    expose:
+      - "8080"
+    networks:
+      - khunlook-dev
   rag-service:
     build:
       context: ../..
@@ -17,6 +38,10 @@ services:
       target: rag-stub
     environment:
       STUB_DELAY_S: "1.5"
+    expose:
+      - "8080"
+    networks:
+      - khunlook-dev
 
   api-gateway:
     build:
@@ -24,10 +49,14 @@ services:
       dockerfile: services/api-gateway/Dockerfile
       target: gateway
     deploy:
-      replicas: 2                 # two replicas, like the cluster, to see load balancing
+      replicas: 1              # two replicas, like the cluster, to see load balancing
     environment:
       RAG_URL: http://rag-service:8080
     depends_on: [rag-service]
+    expose:
+      - "8080"
+    networks:
+      - khunlook-dev
 
   frontend:
     build:
@@ -36,3 +65,9 @@ services:
     ports:
       - "8080:8080"
     depends_on: [api-gateway]
+    networks:
+      - khunlook-dev
+
+networks:
+  khunlook-dev:
+    driver: bridge

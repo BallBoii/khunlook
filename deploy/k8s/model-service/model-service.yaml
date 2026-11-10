@@ -1,0 +1,75 @@
+# model-service: the only pod that talks to OpenRouter (embeddings + LLM). Stateless.
+# Create the secret once (never commit the key):
+#   kubectl create secret generic openrouter --from-literal=api-key=sk-or-...
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-service
+  labels: {app: model-service}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: model-service}
+  template:
+    metadata:
+      labels: {app: model-service}
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: arm64          # Pi workers only
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels: {app: model-service}
+      tolerations:
+        - {key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 20}
+        - {key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 20}
+      containers:
+        - name: model-service
+          image: CHANGE_ME_REGISTRY/model-service:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: OPENROUTER_API_KEY
+              valueFrom: {secretKeyRef: {name: openrouter, key: api-key}}
+            - {name: EMBED_MODEL, value: "baai/bge-m3"}          # must match the vector-db index
+            - {name: EMBED_DIM, value: "1024"}
+            - {name: CHAT_MODEL, value: "google/gemma-3-4b-it"}
+            - {name: LOG_LEVEL, value: info}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 160Mi}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 15
+          readinessProbe:                  # fails only if the API key is missing; never calls OpenRouter
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            failureThreshold: 2
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-service          # rag-service's default MODEL_SERVICE_URL is http://model-service:8080
+  labels: {app: model-service}
+spec:
+  type: ClusterIP
+  selector: {app: model-service}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
