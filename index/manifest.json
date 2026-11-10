@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "index_version": "cfeecc46",
+  "index_version": "9a4ee5d9",
   "embedding_model": "baai/bge-m3",
   "embedding_dim": 1024,
-  "num_chunks": 10,
+  "num_chunks": 783,
   "distance": "cosine",
-  "built_at": "2026-11-10T14:17:42+00:00"
+  "built_at": "2026-11-10T17:50:01+00:00"
 }
