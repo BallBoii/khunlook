@@ -1,0 +1,232 @@
+/* SDS Course Assistant: styles, following the Chulalongkorn University CI guidelines (2018).
+ *
+ *   CU Pink           accents only (header stripe, focus ring, switch); 3.5:1 on white is too
+ *                     low for small text
+ *   Engineering maroon  everything that carries text (Send button, links, source chips)
+ *   Chulalongkorn     headings          Chulacharas New   body text (both include Thai)
+ *
+ * Sections: fonts · colours · base · header · banner · layout · chat (empty state, messages,
+ * answer card, pod chain, composer) · trace panel · small screens
+ */
+
+/* ======================================================================================= fonts
+   Self-hosted in the image, so the page never needs the internet. Missing files fall back to
+   the system font (see --font-body). */
+@font-face { font-family: "Chulalongkorn"; src: url("fonts/Chulalongkorn-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Chulalongkorn"; src: url("fonts/Chulalongkorn-Bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "Chulacharas New"; src: url("fonts/ChulaCharasNew-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Chulacharas New"; src: url("fonts/ChulaCharasNew-Bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+
+:root {
+  /* ===================================================================================== colours */
+  /* CU colour palette (CI 3.1) */
+  --cu-pink: #DE5C8E;        /* PMS P 73-14 C - accent only: 3.5:1 on white */
+  --cu-light-pink: #F8E1EA;  /* CU Pink at 20% */
+  --cu-grey: #58595B;        /* PMS Process Black C at 80% */
+  --cu-copper: #AB5814;      /* PMS P 28-16 C */
+  --cu-gold: #E9C869;        /* PMS P 7-14 C - backgrounds only */
+  /* Faculty of Engineering (CI 3.5) */
+  --eng-maroon: #8B2332;     /* PMS 202 C - 8.8:1 on white, safe for any text */
+  --eng-maroon-dark: #6E1B28;
+
+  --ink: #231F20;
+  --paper: #FFFFFF;
+  --surface: #FBF7F8;
+  --line: #E6DDE0;
+  --ok: #2E8540;             /* status only, not part of the CI */
+  --fail: #C3002F;
+
+  --font-head: "Chulalongkorn", "Chulacharas New", "Sarabun", "Noto Sans Thai", "Leelawadee UI", "Thonburi", system-ui, sans-serif;
+  --font-body: "Chulacharas New", "Sarabun", "Noto Sans Thai", "Leelawadee UI", "Thonburi", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --radius: 12px;
+}
+
+/* ======================================================================================== base */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: var(--font-body);
+  font-size: 17px;                 /* Chulacharas New runs small; 17px reads like 16px */
+  line-height: 1.6;                 /* room for Thai vowels and tone marks in questions */
+  color: var(--ink);
+  background: var(--paper);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+button, textarea, input { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--cu-pink); outline-offset: 2px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ====================================================================================== header */
+.site-header { background: var(--paper); position: sticky; top: 0; z-index: 5; }
+.header-inner {
+  max-width: 1160px; margin: 0 auto; padding: 14px 20px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+}
+.brand { display: flex; align-items: center; gap: 20px; min-width: 0; }
+/* Faculty of Engineering logo: keep its proportions and some clear space around it */
+.logo { height: 36px; width: auto; max-width: 36vw; object-fit: contain; flex: none; margin-right: 4px; }
+.titles { min-width: 0; }
+.titles h1 {
+  font-family: var(--font-head); font-weight: 700; font-size: 22px; line-height: 1.2;
+  margin: 0; color: var(--ink);
+}
+.subtitle, .dept { margin: 0; font-size: 14px; line-height: 1.45; color: var(--cu-grey); }
+.dept { color: var(--eng-maroon); }
+
+.stripe { display: flex; flex-direction: column; }
+.stripe .pink { height: 5px; background: var(--cu-pink); }
+.stripe .maroon { height: 3px; background: var(--eng-maroon); }
+
+.demo-toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 15px; color: var(--cu-grey); flex: none; }
+.demo-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.switch { width: 40px; height: 22px; border-radius: 11px; background: var(--line); position: relative; transition: background .2s; }
+.switch::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--paper); box-shadow: 0 1px 2px rgb(0 0 0 / .25); transition: transform .2s;
+}
+.demo-toggle input:checked + .switch { background: var(--cu-pink); }
+.demo-toggle input:checked + .switch::after { transform: translateX(18px); }
+.demo-toggle input:focus-visible + .switch { outline: 3px solid var(--cu-pink); outline-offset: 2px; }
+
+/* ====================================================================================== banner
+   Gold "Recovering, retrying…" bar shown during a failover retry. */
+.banner {
+  background: var(--cu-gold); color: var(--ink); text-align: center;
+  padding: 8px 16px; font-size: 14px; font-weight: 700;
+}
+
+/* ====================================================================================== layout
+   One centred column; in demo mode a second column for the trace panel. */
+.layout {
+  flex: 1; width: 100%; max-width: 1160px; margin: 0 auto; padding: 24px 20px 0;
+  display: grid; grid-template-columns: minmax(0, 760px); justify-content: center; gap: 24px;
+}
+.layout.with-trace { grid-template-columns: minmax(0, 1fr) 300px; }
+.chat { display: flex; flex-direction: column; min-height: 0; }
+.messages { flex: 1; display: flex; flex-direction: column; gap: 16px; padding-bottom: 16px; }
+
+/* ======================================================================================== chat */
+/* empty state: shown until the first question */
+.empty { text-align: center; padding: 48px 8px 24px; color: var(--cu-grey); }
+.empty h2 { font-family: var(--font-head); font-weight: 700; font-size: 26px; line-height: 1.3; color: var(--ink); margin: 0 0 12px; }
+.empty p { margin: 0 0 24px; font-size: 15px; }
+.examples { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.examples button {
+  border: 1px solid var(--line); background: var(--paper); border-radius: 999px;
+  padding: 8px 16px; cursor: pointer; font-size: 15px; color: var(--eng-maroon);
+}
+.examples button:hover { border-color: var(--cu-pink); background: var(--cu-light-pink); }
+
+/* the user's question bubble */
+.msg-user {
+  align-self: flex-end; max-width: 80%;
+  background: var(--cu-light-pink); color: var(--ink);
+  padding: 10px 16px; border-radius: var(--radius) var(--radius) 4px var(--radius);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+/* answer card: .pending while waiting, .error / .notice instead of an answer */
+.msg-answer {
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper);
+  padding: 16px 20px; box-shadow: 0 1px 2px rgb(35 31 32 / .04);
+}
+.msg-answer .text p { margin: 0 0 8px; overflow-wrap: anywhere; }
+.msg-answer .text p:last-child { margin-bottom: 0; }
+.msg-answer.pending .text { color: var(--cu-grey); }
+.msg-answer.error { border-color: var(--fail); }
+.msg-answer.error .text { color: var(--fail); }
+.msg-answer.notice { background: var(--surface); }
+.msg-answer.notice .text { color: var(--cu-grey); }
+
+.progress { height: 3px; margin-top: 12px; border-radius: 2px; background: var(--cu-light-pink); overflow: hidden; position: relative; }
+.progress::after { content: ""; position: absolute; inset: 0; width: 35%; background: var(--cu-pink); animation: slide 1.2s ease-in-out infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+@media (prefers-reduced-motion: reduce) { .progress::after { animation: none; width: 100%; opacity: .5; } }
+
+.label { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--cu-grey); margin: 14px 0 6px; }
+.sources { display: flex; flex-wrap: wrap; gap: 6px; }
+.source {
+  background: var(--cu-light-pink); color: var(--eng-maroon);
+  border-radius: 999px; padding: 3px 12px; font-size: 14px;
+}
+.not-covered { margin-top: 10px; font-size: 14px; color: var(--cu-grey); }
+
+/* pod chain under an answer: hidden unless <body> has the demo class (set by app.js).
+   Each service gets one CI colour through --svc. */
+.served { display: none; }
+body.demo .served { display: block; }
+.chain { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.svc-frontend      { --svc: var(--cu-pink); }
+.svc-api-gateway   { --svc: var(--eng-maroon); }
+.svc-rag-service   { --svc: var(--cu-copper); }
+.svc-vector-db     { --svc: var(--cu-gold); }
+.svc-model-service { --svc: var(--cu-grey); }
+.svc-other         { --svc: var(--cu-grey); }
+.chip {
+  display: inline-flex; align-items: center; border-radius: 999px; padding: 2px 10px;
+  font-size: 13.5px; font-weight: 700; background: var(--paper);
+  color: var(--svc); border: 1.5px solid var(--svc);
+}
+.chip.svc-vector-db { color: var(--ink); background: var(--cu-gold); }   /* gold is too light for text */
+.chain .sep { color: var(--cu-grey); font-size: 12px; }
+.pods { font-family: var(--font-mono); font-size: 12px; color: var(--cu-grey); margin-top: 6px; overflow-wrap: anywhere; }
+.meta { font-size: 13px; color: var(--cu-grey); margin-top: 8px; }
+
+/* composer: question box + Send, stays at the bottom of the screen */
+.composer {
+  position: sticky; bottom: 0; background: var(--paper);
+  display: flex; gap: 8px; align-items: flex-end; padding: 12px 0 16px;
+}
+.composer textarea {
+  flex: 1; resize: none; max-height: 160px; min-height: 48px;
+  border: 1.5px solid var(--line); border-radius: 24px; padding: 11px 18px; background: var(--paper);
+  line-height: 1.5;
+}
+.composer textarea:focus { border-color: var(--cu-pink); outline: none; box-shadow: 0 0 0 3px var(--cu-light-pink); }
+.composer button {
+  flex: none; height: 48px; padding: 0 22px; border: 0; border-radius: 24px; cursor: pointer;
+  background: var(--eng-maroon); color: #fff; font-weight: 700;
+}
+.composer button:hover { background: var(--eng-maroon-dark); }
+.composer button:disabled { opacity: .55; cursor: not-allowed; }
+
+/* ================================================================================= trace panel
+   Demo mode only: ticks (one per check), stats, latest pod chain. */
+.trace {
+  align-self: start; position: sticky; top: 104px;
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; background: var(--paper);
+}
+.trace h2 { font-family: var(--font-head); font-size: 17px; margin: 0; }
+.trace h3 { font-size: 14px; margin: 16px 0 8px; }
+.trace-head p { margin: 0; font-size: 14px; color: var(--cu-grey); }
+.ticks { display: grid; grid-template-columns: repeat(30, 1fr); gap: 2px; margin-top: 14px; height: 22px; }
+.tick { border-radius: 2px; background: var(--line); }
+.tick.ok { background: var(--ok); }
+.tick.fail { background: var(--fail); }
+.trace-stats { font-size: 14px; color: var(--cu-grey); margin: 8px 0 0; }
+.chain-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.chain-list li { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12.5px; overflow-wrap: anywhere; }
+.chain-list .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--svc); flex: none; }
+.chain-list .pod { color: var(--ink); }
+.chain-list li.new .pod { background: var(--cu-light-pink); border-radius: 4px; padding: 0 4px; }
+.trace-note { font-size: 13.5px; color: var(--cu-grey); margin: 16px 0 0; }
+
+/* =============================================================================== small screens */
+@media (max-width: 860px) {
+  .layout.with-trace { grid-template-columns: minmax(0, 1fr); }
+  .trace { position: static; order: -1; }   /* trace strip above the chat on phones */
+  .trace .trace-note, .trace h3, .chain-list { display: none; }
+}
+@media (max-width: 560px) {
+  .header-inner { padding: 10px 16px; flex-wrap: wrap; }
+  .logo { height: auto; width: 100%; max-width: 210px; }
+  .brand { flex-wrap: wrap; gap: 8px; }
+  .titles h1 { font-size: 19px; }
+  .dept { display: none; }                 /* lockup drops the department line on phones */
+  .layout { padding: 16px 16px 0; }
+  .msg-user { max-width: 92%; }
+  .composer button { padding: 0 16px; }
+}

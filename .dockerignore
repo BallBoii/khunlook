@@ -1,0 +1,10 @@
+# Keeps Docker build contexts small and free of local files. Every Dockerfile in this repo builds
+# from the repo root and copies only what it needs (services/<name>/..., index/).
+.git
+.venv
+**/__pycache__
+**/.pytest_cache
+**/*.pyc
+.env
+**/.env
+ingest/cache

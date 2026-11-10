@@ -1,0 +1,38 @@
+# LOCAL TESTING ONLY: runs on a laptop with Docker, never on the cluster.
+#
+#   frontend -> api-gateway (x2) -> fake rag-service (stands in for rag, vector-db and model)
+#
+#   make dev-up      then open http://localhost:8080/?demo
+#   make dev-down
+#
+# To test against the real services later, replace the rag-service entry with the real image
+# (and add vector-db and model-service).
+name: khunlook-dev
+
+services:
+  rag-service:
+    build:
+      context: ../..
+      dockerfile: services/api-gateway/Dockerfile
+      target: rag-stub
+    environment:
+      STUB_DELAY_S: "1.5"
+
+  api-gateway:
+    build:
+      context: ../..
+      dockerfile: services/api-gateway/Dockerfile
+      target: gateway
+    deploy:
+      replicas: 2                 # two replicas, like the cluster, to see load balancing
+    environment:
+      RAG_URL: http://rag-service:8080
+    depends_on: [rag-service]
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: services/frontend/Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on: [api-gateway]
