@@ -18,6 +18,20 @@ STOPWORDS = frozenset(
 )
 
 
+TOKEN_RE = re.compile(r"[฀-๿]+|\w+")
+
+
+def tokenize(text: str) -> list[str]:
+    """Same rule as vector-db's BM25: words, minus stopwords; Thai runs -> character bigrams."""
+    out: list[str] = []
+    for tok in TOKEN_RE.findall(text.lower()):
+        if "฀" <= tok[0] <= "๿":
+            out.extend([tok[i:i + 2] for i in range(len(tok) - 1)] or [tok])
+        elif tok not in STOPWORDS:
+            out.append(tok)
+    return out
+
+
 def l2_normalize(m: np.ndarray) -> np.ndarray:
     m = np.asarray(m, dtype=np.float32)
     norms = np.linalg.norm(m, axis=-1, keepdims=True)
@@ -37,9 +51,7 @@ class FakeEmbedder:
     def embed(self, texts: list[str]) -> np.ndarray:
         out = np.zeros((len(texts), self.dim), dtype=np.float32)
         for row, text in enumerate(texts):
-            for tok in re.findall(r"\w+", text.lower()):
-                if tok in STOPWORDS:
-                    continue
+            for tok in tokenize(text):
                 h = int.from_bytes(hashlib.blake2b(tok.encode(), digest_size=8).digest(), "little")
                 out[row, h % self.dim] += 1.0 if (h >> 63) else -1.0
             if not out[row].any():

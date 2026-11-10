@@ -122,6 +122,12 @@ def test_invalid_index_stays_not_ready(tmp_path, monkeypatch, breakage):
         assert r.headers["X-Served-By"]
 
 
+def test_bm25_thai_query_matches_via_bigrams():
+    bm = BM25(["วิชานี้เกรดดีมาก สอนสนุก", "การบ้านเยอะมาก ส่งงานทุกสัปดาห์", "computer engineering"])
+    s = bm.scores("เกรดดีไหม")          # no spaces, different suffix: whole-word matching would miss it
+    assert s[0] > 0 and s[0] > s[1] and s[2] == 0
+
+
 def test_bm25_ranking():
     bm = BM25(["kubernetes pods pods", "kubernetes services", "raspberry pi"])
     s = bm.scores("pods")

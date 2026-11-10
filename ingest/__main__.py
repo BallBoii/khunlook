@@ -39,7 +39,7 @@ def load_questions(path: Path) -> list[dict]:
 
 def make_chunks(cfg: dict) -> list[Chunk]:
     manifest = yaml.safe_load((cfg["corpus_dir"] / "manifest.yaml").read_text(encoding="utf-8"))
-    chunks = build_chunks(cfg["corpus_dir"], load_manifest(manifest), cfg["cleaning"], cfg["chunking"])
+    chunks = build_chunks(cfg["corpus_dir"], load_manifest(manifest, cfg["corpus_dir"]), cfg["cleaning"], cfg["chunking"])
     if not chunks:
         raise SystemExit("no chunks produced - is corpus/manifest.yaml empty?")
     return chunks
@@ -117,7 +117,8 @@ def cmd_eval(cfg: dict, top_k: int = 4) -> dict:
     hit1 = hit4 = n = 0
     first_hit_scores, miss_best = [], []
     for fx in fixtures:
-        expected = {(e["doc_id"], int(e["page"])) for e in fx["expected"]}
+        # an expected entry without a page matches any chunk of that document (e.g. a course)
+        expected = {(e["doc_id"], int(e["page"]) if "page" in e else None) for e in fx["expected"]}
         if not expected:
             print(f"  skip {fx['id']}: no expected pages in questions.yaml")
             continue
@@ -127,7 +128,8 @@ def cmd_eval(cfg: dict, top_k: int = 4) -> dict:
         n += 1
         scores = vectors @ np.asarray(fx["vector"], dtype=np.float32)
         top = np.argsort(-scores)[:top_k]
-        ranks = [r for r, row in enumerate(top) if (chunks[row]["doc_id"], chunks[row]["page"]) in expected]
+        ranks = [r for r, row in enumerate(top)
+                 if (chunks[row]["doc_id"], chunks[row]["page"]) in expected or (chunks[row]["doc_id"], None) in expected]
         hit1 += bool(ranks and ranks[0] == 0)
         hit4 += bool(ranks)
         if ranks:

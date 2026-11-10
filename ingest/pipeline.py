@@ -1,17 +1,22 @@
 """Corpus -> clean text -> chunks.  extract -> clean -> chunk, all deterministic."""
 from __future__ import annotations
 
+import html
 import logging
 import re
 import uuid
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 log = logging.getLogger("ingest")
 
 BULLET_RE = re.compile(r"^[▸►▪▫•◦‣●○■□➢➤✓✔∙·\-–—*]+\s*")
 SPACE_RE = re.compile(r"[ \t  -​　]+")
+BLOCK_END_RE = re.compile(r"<br\s*/?>|</(p|div|li|ul|ol|h\d|blockquote|tr)\s*>", re.IGNORECASE)
+BLOCK_END_EOL_RE = re.compile(rf"(?:{BLOCK_END_RE.pattern})+[ \t]*$", re.IGNORECASE | re.MULTILINE)
+TAG_RE = re.compile(r"<[^>]+>")
+SOURCE_DIRS = {"slides": "raw", "notes": "notes", "course": "courses"}
 
 
 @dataclass
@@ -19,7 +24,7 @@ class Document:
     doc_id: str
     title: str
     source_file: str
-    type: str          # slides | notes
+    type: str          # slides | notes | course
     page: int = 1      # notes only
 
 
@@ -33,12 +38,17 @@ class Chunk:
     chunk_index: int
     text: str
     char_count: int
+    kind: str = field(default="page", repr=False)   # not serialized: "course" chunks have no meaningful page
 
     def embedding_text(self) -> str:
+        if self.kind == "course":
+            return f"{self.doc_title}\n{self.text}"
         return f"{self.doc_title} - page {self.page}\n{self.text}"
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        del d["kind"]
+        return d
 
 
 def chunk_id(doc_id: str, page: int, chunk_index: int) -> str:
@@ -47,9 +57,28 @@ def chunk_id(doc_id: str, page: int, chunk_index: int) -> str:
 
 # ---------------------------------------------------------------- extract
 
-def load_manifest(raw: dict) -> list[Document]:
+def markdown_title(path: Path) -> str:
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return path.stem
+
+
+def load_manifest(raw: dict, corpus_dir: Path) -> list[Document]:
+    """Explicit entries, plus `glob: courses/*.md` entries (one course per file: doc_id = file stem,
+    title = the file's `# ` heading)."""
     docs = []
     for d in raw.get("documents") or []:
+        if "glob" in d:
+            dtype = d.get("type", "course")
+            paths = sorted(corpus_dir.glob(d["glob"]))
+            if not paths:
+                raise FileNotFoundError(f"manifest glob {d['glob']!r} matched no files under {corpus_dir}")
+            for p in paths:
+                if p.parent != corpus_dir / SOURCE_DIRS[dtype]:
+                    raise ValueError(f"{p}: {dtype} files must live in {corpus_dir / SOURCE_DIRS[dtype]}")
+                docs.append(Document(p.stem, markdown_title(p), p.name, dtype))
+            continue
         dtype = d.get("type") or ("notes" if d["source_file"].endswith(".md") else "slides")
         docs.append(Document(d["doc_id"], d["title"], d["source_file"], dtype, int(d.get("page", 1))))
     ids = [d.doc_id for d in docs]
@@ -60,7 +89,7 @@ def load_manifest(raw: dict) -> list[Document]:
 
 
 def source_path(corpus_dir: Path, doc: Document) -> Path:
-    return corpus_dir / ("notes" if doc.type == "notes" else "raw") / doc.source_file
+    return corpus_dir / SOURCE_DIRS[doc.type] / doc.source_file
 
 
 def extract_pages(path: Path, doc: Document) -> list[tuple[int, str]]:
@@ -106,6 +135,16 @@ def clean_pages(pages: list[str], cfg: dict, page_numbers: list[int] | None = No
         text = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
         out.append(text)
     return out
+
+
+def clean_markdown(text: str) -> str:
+    """Course markdown: HTML (from student reviews) -> plain text, drop **bold**, normalize lines."""
+    text = BLOCK_END_EOL_RE.sub("", text)     # a block end at the end of a line is already a line break
+    text = BLOCK_END_RE.sub("\n", text)       # other paragraph/list ends become line breaks (split points)
+    text = TAG_RE.sub("", text)
+    text = html.unescape(text).replace("**", "")
+    lines = [normalize_line(l) for l in text.splitlines()]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
 # ---------------------------------------------------------------- chunk
@@ -174,9 +213,61 @@ def chunk_document(doc: Document, pages: list[tuple[int, str]], cfg: dict) -> li
     return chunks
 
 
+def markdown_sections(text: str) -> list[tuple[str, str]]:
+    """[(heading line or "", body)] split on `## `; the `# title` line is dropped (it is the doc_title)."""
+    sections: list[tuple[str, str]] = []
+    heading, buf = "", []
+    for line in text.split("\n"):
+        if line.startswith("## "):
+            sections.append((heading, "\n".join(buf).strip()))
+            heading, buf = line, []
+        elif line.startswith("# ") and not sections and not heading:
+            continue
+        else:
+            buf.append(line)
+    sections.append((heading, "\n".join(buf).strip()))
+    return [(h, b) for h, b in sections if b]
+
+
+def chunk_markdown(doc: Document, text: str, cfg: dict) -> list[Chunk]:
+    """Pack whole `##` sections into chunks <= max_chars; split oversized sections (reviews, long
+    tables) and repeat the heading (and a table's header row) at the top of every piece."""
+    max_chars, overlap = cfg["max_chars"], cfg["overlap_chars"]
+    blocks: list[str] = []
+    for heading, body in markdown_sections(text):
+        block = f"{heading}\n{body}" if heading else body
+        if len(block) <= max_chars:
+            blocks.append(block)
+            continue
+        prefix, lines = [heading] if heading else [], body.split("\n")
+        if len(lines) > 2 and lines[0].startswith("|") and lines[1].startswith("|"):
+            prefix, body = prefix + lines[:2], "\n".join(lines[2:])
+        head = "\n".join(prefix)
+        for piece in split_text(body, max_chars - len(head) - 1, overlap):
+            blocks.append(f"{head}\n{piece}" if head else piece)
+
+    texts: list[str] = []
+    for b in blocks:
+        if texts and len(texts[-1]) + 2 + len(b) <= max_chars:
+            texts[-1] += "\n\n" + b
+        else:
+            texts.append(b)
+    return [Chunk(chunk_id(doc.doc_id, 1, i), doc.doc_id, doc.title, doc.source_file, 1, i, t, len(t), kind="course")
+            for i, t in enumerate(texts)]
+
+
 def build_chunks(corpus_dir: Path, docs: list[Document], clean_cfg: dict, chunk_cfg: dict) -> list[Chunk]:
     all_chunks: list[Chunk] = []
+    courses = 0
     for doc in docs:
+        if doc.type == "course":
+            path = source_path(corpus_dir, doc)
+            chunks = chunk_markdown(doc, clean_markdown(path.read_text(encoding="utf-8")), chunk_cfg)
+            if not chunks:
+                log.warning("%s: no text", doc.doc_id)
+            all_chunks.extend(chunks)
+            courses += 1
+            continue
         raw = extract_pages(source_path(corpus_dir, doc), doc)
         cleaned = clean_pages([t for _, t in raw], clean_cfg, [p for p, _ in raw])
         for (page_no, _), text in zip(raw, cleaned):
@@ -186,4 +277,6 @@ def build_chunks(corpus_dir: Path, docs: list[Document], clean_cfg: dict, chunk_
         chunks = chunk_document(doc, list(zip([p for p, _ in raw], cleaned)), chunk_cfg)
         log.info("%s: %d pages -> %d chunks", doc.doc_id, len(raw), len(chunks))
         all_chunks.extend(chunks)
+    if courses:
+        log.info("%d course files -> %d chunks", courses, sum(c.kind == "course" for c in all_chunks))
     return all_chunks

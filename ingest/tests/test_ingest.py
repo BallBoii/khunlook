@@ -13,7 +13,9 @@ sys.path.insert(0, str(ROOT))
 
 from ingest import __main__ as cli  # noqa: E402
 from ingest.embed import EmbeddingCache, FakeEmbedder, OpenRouterEmbedder, embed_texts, l2_normalize  # noqa: E402
-from ingest.pipeline import Document, chunk_document, chunk_id, clean_pages, normalize_line, split_text  # noqa: E402
+from ingest.embed import tokenize  # noqa: E402
+from ingest.pipeline import (Document, build_chunks, chunk_document, chunk_id, chunk_markdown, clean_markdown,  # noqa: E402
+                             clean_pages, load_manifest, normalize_line, split_text)
 
 CFG = yaml.safe_load((ROOT / "ingest" / "config.yaml").read_text(encoding="utf-8"))
 DOC = Document("deck", "Deck", "deck.pdf", "slides")
@@ -129,6 +131,86 @@ def test_openrouter_requires_model_and_dim(override):
         OpenRouterEmbedder(**{**CFG["embedding"]["openrouter"], **override})
 
 
+# ---------------------------------------------------------------- course markdown
+
+COURSE_MD = """# 2110221 COMP ENG ESS — COMPUTER ENGINEERING ESSENTIALS (แก่นวิศวกรรมคอมพิวเตอร์)
+
+- **Course number:** 2110221
+- **Credits:** 3 (LECT 3.0 CR(LECT 3.0 HR))
+- **Midterm:** 2570-02-25 08:30-11:30 | **Final:** 2570-04-30 08:30-11:30
+
+## Description
+Overview of computer engineering &amp; information technology.
+
+## Sections
+
+| Sec | Day & time | Room | Instructors | Seats | Status |
+|---|---|---|---|---|---|
+| 33 | WE 09:30-12:30 | EN100 504 | ASR | 0/51 | open |
+
+## Student reviews / รีวิวจากนิสิต
+{reviews}
+"""
+
+
+def course_doc():
+    return Document("2110221", "2110221 COMP ENG ESS — COMPUTER ENGINEERING ESSENTIALS", "2110221.md", "course")
+
+
+def test_clean_markdown_strips_html_bold_and_entities():
+    text = clean_markdown('- (3/5, 2568/1) <p class="slate-p">ดี <strong>มาก</strong></p><p>second&quot;para</p>\n- **Credits:** 3')
+    assert text == '- (3/5, 2568/1) ดี มาก\nsecond"para\n- Credits: 3'
+
+
+def test_small_course_packs_sections_and_drops_title_line():
+    md = clean_markdown(COURSE_MD.format(reviews='- (3/5, 2568/1) <p class="slate-p">เกรดไม่ได้ง่ายมาก</p>'))
+    chunks = chunk_markdown(course_doc(), md, CHUNK_CFG)
+    assert len(chunks) == 1
+    c = chunks[0]
+    assert not c.text.startswith("#") and "## Description" in c.text and "## Sections" in c.text and "เกรด" in c.text
+    assert "&amp;" not in c.text and "**" not in c.text and "<p" not in c.text
+    assert c.page == 1 and c.id == chunk_id("2110221", 1, 0)
+    assert c.embedding_text().startswith("2110221 COMP ENG ESS") and "page" not in c.embedding_text().split("\n")[0]
+    assert "kind" not in c.to_dict()
+
+
+def test_long_reviews_split_with_heading_repeated():
+    reviews = "\n".join(f'- ({i % 5 + 1}/5, 2567/1) <p class="slate-p">' + "รีวิววิชานี้ดีมาก " * 30 + "</p>"
+                        for i in range(20))
+    chunks = chunk_markdown(course_doc(), clean_markdown(COURSE_MD.format(reviews=reviews)), CHUNK_CFG)
+    review_chunks = [c for c in chunks if "รีวิววิชา" in c.text]
+    assert len(review_chunks) > 3
+    assert all(c.char_count <= 1200 for c in chunks)
+    assert all(c.text.startswith("## Student reviews") or "\n## Student reviews" in c.text for c in review_chunks)
+    assert [c.chunk_index for c in chunks] == list(range(len(chunks)))
+    assert len({c.id for c in chunks}) == len(chunks)
+
+
+def test_long_table_repeats_header_row():
+    rows = "\n".join(f"| {i} | MO 09:00-12:00 | ENG3 {i} | XYZ | 0/40 | open |" for i in range(60))
+    md = COURSE_MD.replace("| 33 | WE 09:30-12:30 | EN100 504 | ASR | 0/51 | open |", rows).format(reviews="")
+    tables = [c for c in chunk_markdown(course_doc(), clean_markdown(md), CHUNK_CFG) if "MO 09:00" in c.text]
+    assert len(tables) > 1
+    assert all("## Sections\n| Sec | Day & time" in c.text for c in tables)
+
+
+def test_glob_manifest_expands_course_files(tmp_path):
+    (tmp_path / "courses").mkdir()
+    (tmp_path / "courses" / "2110221.md").write_text(COURSE_MD.format(reviews=""), encoding="utf-8")
+    (tmp_path / "courses" / "0123101.md").write_text("# 0123101 SOMETHING\n\n## Sections\n| a |\n", encoding="utf-8")
+    docs = load_manifest({"documents": [{"glob": "courses/*.md", "type": "course"}]}, tmp_path)
+    assert [(d.doc_id, d.type) for d in docs] == [("0123101", "course"), ("2110221", "course")]
+    assert docs[1].title.startswith("2110221 COMP ENG ESS")
+    chunks = build_chunks(tmp_path, docs, CFG["cleaning"], CHUNK_CFG)
+    assert {c.doc_id for c in chunks} == {"0123101", "2110221"}
+    with pytest.raises(FileNotFoundError):
+        load_manifest({"documents": [{"glob": "courses/*.pdf"}]}, tmp_path)
+
+
+def test_tokenize_thai_bigrams():
+    assert tokenize("The demo วิชา") == ["demo", "วิ", "ิช", "ชา"]
+
+
 # ---------------------------------------------------------------- end to end
 
 def make_corpus(tmp_path: Path) -> dict:
@@ -154,7 +236,8 @@ def make_corpus(tmp_path: Path) -> dict:
     qfile.write_text(yaml.safe_dump({"questions": [
         {"id": "q1", "question": "When is the demo?", "expected": [{"doc_id": "brief", "page": 2}]},
         {"id": "q2", "question": "How many Raspberry Pi boards?", "expected": [{"doc_id": "brief", "page": 3}]},
-        {"id": "q3", "question": "What is the grading rubric?", "expected": []}]}), encoding="utf-8")
+        {"id": "q3", "question": "What is the grading rubric?", "expected": []},
+        {"id": "q4", "question": "What is the rubric?", "expected": [{"doc_id": "rubric"}]}]}), encoding="utf-8")
     return {**CFG, "corpus_dir": corpus, "index_dir": tmp_path / "index", "cache_dir": tmp_path / "cache",
             "questions_file": qfile}
 
@@ -179,10 +262,10 @@ def test_end_to_end_fake_ingest_validates_and_evals(tmp_path):
     assert idx.manifest["embedding_model"] == "fake-hash-v1" and idx.vectors.shape == (4, 256)
 
     fixtures = [json.loads(l) for l in (cfg["index_dir"] / "query_fixtures.jsonl").read_text().splitlines()]
-    assert len(fixtures) == 3 and len(fixtures[0]["vector"]) == 256
+    assert len(fixtures) == 4 and len(fixtures[0]["vector"]) == 256
 
-    report = cli.cmd_eval(cfg)
-    assert report["questions"] == 2 and report["hit@4"] == 1.0
+    report = cli.cmd_eval(cfg)                                    # q4 matches by doc_id only (no page)
+    assert report["questions"] == 3 and report["hit@4"] == 1.0
 
     version = idx.manifest["index_version"]
     cli.cmd_ingest(cfg, "fake", assume_yes=False)                 # reproducible

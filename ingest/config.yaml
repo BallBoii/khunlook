@@ -22,7 +22,7 @@ embedding:
     dim: 1024                  # every returned vector is checked against this (EMBED_DIM in services/model)
     base_url: https://openrouter.ai/api/v1
     api_key_env: OPENROUTER_API_KEY
-    batch_size: 32
+    batch_size: 8              # the bge-m3 provider answers 429 "engine overloaded" to 32 long Thai chunks
     max_retries: 5
 
 cleaning:

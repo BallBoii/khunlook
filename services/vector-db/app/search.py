@@ -18,7 +18,9 @@ STOPWORDS = frozenset(
     "a an and are as at be by for from has have how i in is it its of on or that the this to was what when "
     "where which who will with we you do does can our your us".split()
 )
-TOKEN_RE = re.compile(r"\w+")
+# Thai runs are matched first: Thai has no spaces between words and `\w` does not match Thai vowel/tone
+# marks, so a Thai run is turned into overlapping character bigrams instead of "words".
+TOKEN_RE = re.compile(r"[฀-๿]+|\w+")
 
 
 class IndexValidationError(Exception):
@@ -26,7 +28,13 @@ class IndexValidationError(Exception):
 
 
 def tokenize(text: str) -> list[str]:
-    return [t for t in TOKEN_RE.findall(text.lower()) if t not in STOPWORDS]
+    out: list[str] = []
+    for tok in TOKEN_RE.findall(text.lower()):
+        if "฀" <= tok[0] <= "๿":
+            out.extend([tok[i:i + 2] for i in range(len(tok) - 1)] or [tok])
+        elif tok not in STOPWORDS:
+            out.append(tok)
+    return out
 
 
 class BM25:

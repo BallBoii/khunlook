@@ -39,12 +39,12 @@ spec:
             - {name: MAX_TOP_K, value: "20"}
             - {name: LOG_LEVEL, value: info}
           resources:
-            requests: {cpu: 50m, memory: 48Mi}
+            requests: {cpu: 50m, memory: 64Mi}   # ~40 MiB runtime + ~10 MiB course index (27 MiB peak while loading)
             limits: {memory: 160Mi}
-          startupProbe:                    # up to ~30 s for a slow Pi to import numpy + load the index
+          startupProbe:                    # up to ~60 s for a slow Pi to import numpy + load the index (1.6 s on a laptop)
             httpGet: {path: /healthz, port: http}
             periodSeconds: 2
-            failureThreshold: 15
+            failureThreshold: 30
           readinessProbe:
             httpGet: {path: /readyz, port: http}
             periodSeconds: 3

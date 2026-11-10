@@ -1,50 +1,50 @@
 # Eval questions -> index/query_fixtures.jsonl (embedded with the same model as the index).
-# `expected` = every (doc_id, page) whose chunk answers the question; a hit = any of them in the top-k.
+# `expected` = documents that answer the question. For courses give only the doc_id (the course
+# number): any chunk of that course counts. A hit = any expected doc in the top-k results.
 # Questions with an empty `expected` are still embedded (rag-service can use them) but skipped by eval.
-# Add lecture questions here when lecture decks are added to corpus/manifest.yaml.
 questions:
   - id: q01
-    question: When is the final project demo?
-    expected: [{doc_id: sds-final-project-2026, page: 9}, {doc_id: sds-final-project-2026, page: 10}]
+    question: Is there a course that teaches web development basics?
+    expected: [{doc_id: "0299002"}]
   - id: q02
-    question: When is the repository submission deadline?
-    expected: [{doc_id: sds-final-project-2026, page: 8}]
+    question: อยากเรียนวิชาเกี่ยวกับปรัชญากับภาพยนตร์ มีวิชาอะไรบ้าง
+    expected: [{doc_id: "2207203"}]
   - id: q03
-    question: How many Raspberry Pis do we need for the project?
-    expected: [{doc_id: sds-final-project-2026, page: 4}, {doc_id: sds-final-project-2026, page: 6}]
+    question: When is the final exam for Computer Engineering Essentials?
+    expected: [{doc_id: "2110221"}]
   - id: q04
-    question: What is the minimum number of container images the application must use?
-    expected: [{doc_id: sds-final-project-2026, page: 6}]
+    question: วิชา 2110221 สอบกลางภาควันที่เท่าไหร่
+    expected: [{doc_id: "2110221"}]
   - id: q05
-    question: What happens during the fault tolerance test?
-    expected: [{doc_id: sds-final-project-2026, page: 9}, {doc_id: sds-final-project-2026, page: 10}]
+    question: What do students say about Exploring Engineering World? Is the workload heavy?
+    expected: [{doc_id: "2100111"}]
   - id: q06
-    question: How many containers must each client request go through?
-    expected: [{doc_id: sds-final-project-2026, page: 6}, {doc_id: sds-final-project-2026, page: 9}, {doc_id: sds-final-project-2026, page: 10}]
+    question: วิชาท่องโลกวิศวกรรมงานเยอะไหม รีวิวเป็นยังไง
+    expected: [{doc_id: "2100111"}]
   - id: q07
-    question: How is the final project demo graded?
-    expected: [{doc_id: sds-final-project-2026, page: 10}]
+    question: I want a GenEd course about Japanese society today
+    expected: [{doc_id: "2223243"}]
   - id: q08
-    question: Does the deployment have to be automated from GitHub?
-    expected: [{doc_id: sds-final-project-2026, page: 9}, {doc_id: sds-final-project-2026, page: 10}]
+    question: มีวิชาเกี่ยวกับกฎหมายภาษีในชีวิตประจำวันไหม
+    expected: [{doc_id: "3401102"}]
   - id: q09
-    question: What should we use as the master nodes?
-    expected: [{doc_id: sds-final-project-2026, page: 6}, {doc_id: sds-final-project-2026, page: 11}]
+    question: Which course covers machine learning for data analysis?
+    expected: [{doc_id: "0299005"}]
   - id: q10
-    question: How many people are in a project group?
-    expected: [{doc_id: sds-final-project-2026, page: 4}]
+    question: วิชาการเพาะเลี้ยงปลาสวยงามเรียนวันไหน
+    expected: [{doc_id: "2309202"}]
   - id: q11
-    question: What must the README in our GitHub repo explain?
-    expected: [{doc_id: sds-final-project-2026, page: 8}]
+    question: How many credits is Thai Communication Skills?
+    expected: [{doc_id: "0123106"}]
   - id: q12
-    question: Who needs access to our GitHub repository?
-    expected: [{doc_id: sds-final-project-2026, page: 8}]
+    question: วิชาประวัติศาสตร์แอนิเมชันเปิดกี่เซคชัน
+    expected: [{doc_id: "2541169"}]
   - id: q13
-    question: Should our application be stateless or stateful?
-    expected: [{doc_id: sds-final-project-2026, page: 7}]
+    question: Recommend a course about public speaking
+    expected: [{doc_id: "2800314"}]
   - id: q14
-    question: What equipment does each group get?
-    expected: [{doc_id: sds-final-project-2026, page: 4}]
+    question: มีวิชาเรื่องโรคมะเร็งสำหรับนิสิตที่ไม่ได้เรียนแพทย์ไหม
+    expected: [{doc_id: "3011102"}]
   - id: q15
-    question: What do we have to do with the equipment after the demo?
-    expected: [{doc_id: sds-final-project-2026, page: 10}]
+    question: Is there a course about physics in movies?
+    expected: [{doc_id: "2398131"}]
