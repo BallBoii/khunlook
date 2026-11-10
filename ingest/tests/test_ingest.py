@@ -123,9 +123,10 @@ def test_cache_prevents_paying_twice_and_batches(tmp_path):
     assert np.allclose(first, second[:5])
 
 
-def test_openrouter_requires_model_and_dim():
+@pytest.mark.parametrize("override", [{"model": "CHANGE_ME"}, {"model": ""}, {"dim": 0}])
+def test_openrouter_requires_model_and_dim(override):
     with pytest.raises(ValueError):
-        OpenRouterEmbedder(**CFG["embedding"]["openrouter"])  # CHANGE_ME in the committed config
+        OpenRouterEmbedder(**{**CFG["embedding"]["openrouter"], **override})
 
 
 # ---------------------------------------------------------------- end to end

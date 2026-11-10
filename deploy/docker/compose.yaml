@@ -1,12 +1,12 @@
 # LOCAL TESTING ONLY: runs on a laptop with Docker, never on the cluster.
 #
-#   frontend -> api-gateway (x2) -> fake rag-service (stands in for rag, vector-db and model)
+#   frontend -> api-gateway -> rag-service -> vector-db + model-service -> OpenRouter
+#
+# Needs services/model/.env with a real OPENROUTER_API_KEY (copy .env.example). Questions cost a
+# very small amount on OpenRouter.
 #
 #   make dev-up      then open http://localhost:8080/?demo
 #   make dev-down
-#
-# To test against the real services later, replace the rag-service entry with the real image
-# (and add vector-db and model-service).
 name: khunlook-dev
 
 services:
@@ -34,10 +34,11 @@ services:
   rag-service:
     build:
       context: ../..
-      dockerfile: services/api-gateway/Dockerfile
-      target: rag-stub
+      dockerfile: services/rag/Dockerfile
     environment:
-      STUB_DELAY_S: "1.5"
+      VECTOR_DB_URL: http://vector-db:8080
+      MODEL_SERVICE_URL: http://model-service:8080
+    depends_on: [vector-db, model-service]
     expose:
       - "8080"
     networks:

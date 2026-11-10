@@ -3,11 +3,11 @@
 Takes a question from the API gateway and returns an answer grounded in our course documents.
 
 ```
-api-gateway ──POST /v1/ask──▶ rag-service
-                                 1. embed question ───────▶ model-service  POST /v1/embed   (placeholder contract)
+api-gateway ──POST /v1/answer──▶ rag-service
+                                 1. embed question ───────▶ model-service  POST /v1/embed   
                                  2. vector search ────────▶ vector-db      POST /v1/search
                                  3. build prompt (numbered passages + question)
-                                 4. ask the LLM ──────────▶ model-service  POST /v1/chat    (placeholder contract)
+                                 4. ask the LLM ──────────▶ model-service  POST /v1/chat    
                                  5. answer + sources + served_by ──▶ api-gateway
 ```
 
@@ -16,7 +16,7 @@ as soon as it is ready.
 
 ## API
 
-`POST /v1/ask`
+`POST /v1/ask` (and `POST /v1/answer`, see below)
 
 ```json
 {"question": "When is the final project demo?", "top_k": 5}
@@ -51,9 +51,19 @@ Errors use the same shape as vector-db, `{"error": "...", "detail": "..."}`:
 
 If model-service can't embed, rag falls back to vector-db's keyword (BM25) search, and `retrieval` says `"keyword"`.
 
-## model-service contract (to agree with its owner)
+## API-gateway contract
 
-Defined in one place, `app/clients.py` (`EMBED_PATH`, `CHAT_PATH`, `_parse_embed_response`, `_parse_chat_response`):
+api-gateway calls `POST /v1/answer` (same request and logic as `/v1/ask`) and `GET /v1/trace`.
+
+- `/v1/answer` returns `served_by` as a list, `[{"service": "rag-service", "pod": "..."}, {"service": "vector-db", ...},
+  {"service": "model-service", ...}]`, which is what the gateway and the frontend show. `/v1/ask` keeps the
+  detailed dict (with `model-service (embed)` / `(chat)`) for debugging.
+- `GET /v1/trace` checks vector-db and model-service `/readyz` (no LLM call, no cost) and returns
+  `{"ok": true, "served_by": [...]}`, or 502 with `ok: false` and a `detail` naming what is down.
+
+## model-service contract
+
+The real service is `services/model`. Defined in one place, `app/clients.py` (`EMBED_PATH`, `CHAT_PATH`, `_parse_embed_response`, `_parse_chat_response`):
 
 - `POST /v1/embed` `{"input": "text"}` → `{"embedding": [..floats..], "model": "..."}`
   It must use the **same embedding model** as `ingest/config.yaml`, or search results are meaningless.

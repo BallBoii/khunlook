@@ -10,15 +10,17 @@ IMAGE     ?= $(REGISTRY)/vector-db:$(VERSION)-idx$(IDX)
 DOCKER_BUILD = docker buildx build -f services/vector-db/Dockerfile -t $(IMAGE)
 GATEWAY_IMAGE  ?= $(REGISTRY)/api-gateway:$(VERSION)
 FRONTEND_IMAGE ?= $(REGISTRY)/frontend:$(VERSION)
+RAG_LOCAL      ?= rag:$(VERSION)
+RAG_IMAGE      ?= $(REGISTRY)/rag:$(VERSION)
 MODEL_LOCAL    ?= model-service:$(VERSION)
 MODEL_IMAGE    ?= $(REGISTRY)/model-service:$(VERSION)
 COMPOSE        = docker compose -f deploy/docker/compose.yaml
 
 .PHONY: setup ingest estimate eval validate-index test build-vector-db push-vector-db run-vector-db \
-        build-api-gateway push-api-gateway build-frontend push-frontend build-model-service push-model-service run-model-service dev-up dev-down deploy-web
+        build-api-gateway push-api-gateway build-frontend push-frontend build-rag push-rag build-model-service push-model-service run-model-service dev-up dev-down deploy-web
 
 setup:            ## install dev deps
-	$(PY) -m pip install -r ingest/requirements.txt -r services/vector-db/requirements.txt -r services/api-gateway/requirements.txt -r services/model/requirements.txt
+	$(PY) -m pip install -r ingest/requirements.txt -r services/vector-db/requirements.txt -r services/api-gateway/requirements.txt -r services/model/requirements.txt -r services/rag/requirements.txt
 
 ingest:           ## build index/ (free fake embedder unless PROVIDER=openrouter)
 	$(PY) -m ingest ingest $(if $(PROVIDER),--provider $(PROVIDER))
@@ -33,7 +35,9 @@ validate-index:
 	$(PY) services/vector-db/app/search.py index
 
 test:
-	$(PY) -m pytest ingest/tests services/vector-db/tests services/api-gateway/tests services/model/tests -q
+	@# one pytest run per service: each service is a package named `app`, so they can't share a process
+	$(PY) -m pytest ingest/tests -q
+	@for s in vector-db api-gateway model rag; do $(PY) -m pytest services/$$s/tests -q || exit 1; done
 
 build-vector-db: validate-index   ## local single-arch image
 	$(DOCKER_BUILD) --load .
@@ -57,6 +61,13 @@ build-frontend:
 push-frontend:
 	docker buildx build -f services/frontend/Dockerfile -t $(FRONTEND_IMAGE) --platform $(PLATFORMS) --push .
 
+# ---- rag-service ---------------------------------------------------------------------------
+build-rag:             ## local single-arch image
+	docker buildx build -f services/rag/Dockerfile -t $(RAG_LOCAL) --load .
+
+push-rag:              ## multi-arch image to the team registry
+	docker buildx build -f services/rag/Dockerfile -t $(RAG_IMAGE) --platform $(PLATFORMS) --push .
+
 # ---- model-service (OpenRouter embeddings + LLM) -------------------------------------------
 build-model-service:   ## local single-arch image
 	docker buildx build -f services/model/Dockerfile -t $(MODEL_LOCAL) --load .
@@ -67,7 +78,7 @@ push-model-service:    ## multi-arch image to the team registry
 run-model-service:     ## needs OPENROUTER_API_KEY in your shell; listens on :8081
 	docker run --rm -p 8081:8080 -e OPENROUTER_API_KEY -e POD_NAME=local-model-service $(MODEL_LOCAL)
 
-dev-up:              ## frontend + 2 gateways + stub rag-service on http://localhost:8080
+dev-up:              ## whole stack (frontend, gateway, rag, vector-db, model-service) on http://localhost:8080; needs services/model/.env
 	$(COMPOSE) up --build -d
 
 dev-down:

@@ -18,8 +18,8 @@ embedding:
   openrouter:
     # MUST be the exact model model-service uses for query embeddings at runtime.
     # Agree on it with the model-service owner and check the slug/dim at openrouter.ai/models.
-    model: CHANGE_ME           # e.g. qwen/qwen3-embedding-8b, google/gemini-embedding-001, openai/text-embedding-3-small
-    dim: 0                     # e.g. 4096, 3072, 1536 - every returned vector is checked against this
+    model: baai/bge-m3         # same as EMBED_MODEL in services/model
+    dim: 1024                  # every returned vector is checked against this (EMBED_DIM in services/model)
     base_url: https://openrouter.ai/api/v1
     api_key_env: OPENROUTER_API_KEY
     batch_size: 32

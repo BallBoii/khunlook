@@ -1,6 +1,8 @@
 """rag-service: question in, grounded answer out.
 
-    POST /v1/ask  {"question": "When is the demo?"}
+    POST /v1/ask     {"question": "When is the demo?"}
+    POST /v1/answer  same, but `served_by` is the [{service, pod}] list api-gateway and the frontend expect
+    GET  /v1/trace   cheap end-to-end check (vector-db + model-service readiness, no LLM call)
       1. embed the question             -> model-service  /v1/embed   (placeholder contract)
       2. search for similar chunks      -> vector-db      /v1/search
       3. build the prompt (chunks + question)
@@ -11,6 +13,7 @@ Stateless: any replica can answer any request, so a pod lost with its Pi is simp
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -202,3 +205,47 @@ async def ask(body: AskRequest, request: Request):
     # 5. Respond to the API gateway.
     return {"answer": answer, "sources": sources, "retrieval": retrieval,
             "served_by": served_by, "timings": timings, "request_id": rid}
+
+
+# ---------------------------------------------------------------- api-gateway contract
+
+CHAIN_ORDER = {"rag-service": 0, "vector-db": 1, "model-service": 2}
+
+
+def to_chain(served_by: dict) -> list[dict]:
+    """{"model-service (embed)": pod, ...} -> [{"service", "pod"}, ...] in request order, no duplicates."""
+    chain: list[dict] = []
+    for key, pod in served_by.items():
+        hop = {"service": key.split(" (")[0], "pod": pod}
+        if hop not in chain:
+            chain.append(hop)
+    return sorted(chain, key=lambda h: CHAIN_ORDER.get(h["service"], 99))
+
+
+@app.post("/v1/answer")
+async def answer(body: AskRequest, request: Request):
+    result = await ask(body, request)
+    return {**result, "served_by": to_chain(result["served_by"])}
+
+
+@app.get("/v1/trace")
+async def trace(request: Request):
+    """Follows the same path as a question but never calls the LLM (model-service /readyz only checks its key)."""
+    rid = request.state.request_id
+    timeout = env_float("TRACE_TIMEOUT_S", 2)
+    targets = {"vector-db": request.app.state.vdb.base_url, "model-service": request.app.state.model.base_url}
+
+    async def probe(service: str, base: str) -> tuple[dict, str | None]:
+        try:
+            r = await request.app.state.http.get(base + "/readyz", headers={"X-Request-ID": rid}, timeout=timeout)
+        except httpx.HTTPError as e:
+            return {"service": service, "pod": None}, f"{service}: {type(e).__name__}"
+        hop = {"service": service, "pod": r.headers.get("x-served-by")}
+        return hop, None if r.status_code == 200 else f"{service}: HTTP {r.status_code}"
+
+    probes = await asyncio.gather(*(probe(svc, base) for svc, base in targets.items()))
+    chain = [{"service": "rag-service", "pod": POD_NAME}] + [h for h, _ in probes if h["pod"]]
+    problems = [p for _, p in probes if p]
+    ok = not problems
+    return JSONResponse({"ok": ok, "served_by": sorted(chain, key=lambda h: CHAIN_ORDER[h["service"]]),
+                         **({"detail": "; ".join(problems)} if problems else {})}, status_code=200 if ok else 502)

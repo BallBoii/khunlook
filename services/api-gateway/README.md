@@ -32,7 +32,6 @@ Every request gets an ID (`X-Request-ID`), an `X-Served-By: <pod>` header and on
 | `requirements.txt` | Python libraries (pinned versions) | **Yes** (installed in the image) |
 | `Dockerfile` | Builds the image. Default target `gateway` | **Yes**, the `gateway` target |
 | `../../deploy/k8s/api-gateway/api-gateway.yaml` | Kubernetes Deployment + Service | **Yes** |
-| `stub/rag_stub.py` | Fake rag-service (`--target rag-stub`) | No, local testing only |
 | `../../deploy/docker/compose.yaml` | Runs everything on a laptop | No, local testing only |
 | `tests/test_gateway.py` | 26 automated tests | No, run with `make test` |
 
@@ -94,11 +93,12 @@ From the repo root:
 ```bash
 make setup     # once: Python packages (use a virtualenv)
 make test      # all tests, including these 26
-make dev-up    # frontend + 2 gateways + fake rag-service → http://localhost:8080/?demo
+make dev-up    # the whole stack (needs services/model/.env) → http://localhost:8080/?demo
 make dev-down
 ```
 
-The fake rag-service gives the same canned answer to every question (see `stub/rag_stub.py`).
+`dev-up` runs the real rag-service, vector-db and model-service, so every question is a real (very cheap)
+OpenRouter call. To try the gateway alone, point `RAG_URL` at any server that implements the contract above.
 
 ## Deploy to the cluster
 
@@ -115,8 +115,7 @@ that already has a tag won't download a changed image with the same tag.
 
 ## Next steps
 
-- [ ] rag-service team: implement `POST /v1/answer` and `GET /v1/trace` as above
-      (until `/v1/trace` exists, the demo panel shows red).
+- [x] rag-service implements `POST /v1/answer` and `GET /v1/trace` as above.
 - [ ] Team: pick the image registry, then push and set the image tag.
 - [ ] Deploy and check both replicas run on different Pis.
 - [ ] Failover rehearsal with the real services: pull each Pi, note the gap in the trace panel.

@@ -49,6 +49,8 @@ class Fakes:
             method = "keyword" if key.endswith("keyword") else "vector"
             return httpx.Response(200, json={"method": method, "index_version": "x", "results": HITS[:body["top_k"]]},
                                   headers=h)
+        if key.endswith("/readyz"):
+            return httpx.Response(200, json={"status": "ready"}, headers=h)
         return httpx.Response(404, json={"error": "not_found", "detail": key})
 
     def paths(self):
@@ -154,3 +156,39 @@ def test_bad_requests(client):
     assert client.post("/v1/ask", json={}).json()["error"] == "invalid_request"
     assert client.post("/v1/ask", json={"question": ""}).status_code == 400
     assert client.post("/v1/ask", json={"question": "x", "top_k": 99}).status_code == 400
+
+
+def test_answer_returns_the_gateway_contract(client, fakes):
+    r = client.post("/v1/answer", json={"question": "When is the demo?"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["answer"] == "The demo is on 17 November [1]."
+    assert body["sources"][0]["page"] == 9 and body["sources"][0]["doc_title"] == "SDS Final Project"
+    assert body["served_by"] == [{"service": "rag-service", "pod": main.POD_NAME},
+                                 {"service": "vector-db", "pod": "vdb-pod-2"},
+                                 {"service": "model-service", "pod": "model-pod-1"}]
+
+
+def test_answer_errors_keep_their_shape(client, fakes):
+    fakes.fail["vector-db/v1/search"] = httpx.ConnectError("refused")
+    r = client.post("/v1/answer", json={"question": "When is the demo?"})
+    assert r.status_code == 502 and r.json()["error"] == "vector_db_unavailable"
+    assert client.post("/v1/answer", json={"question": ""}).status_code == 400
+
+
+def test_trace_checks_dependencies_without_calling_the_llm(client, fakes):
+    r = client.get("/v1/trace")
+    assert r.status_code == 200 and r.json()["ok"] is True
+    assert [h["service"] for h in r.json()["served_by"]] == ["rag-service", "vector-db", "model-service"]
+    assert sorted(fakes.paths()) == ["model-service/readyz", "vector-db/readyz"]
+
+
+def test_trace_reports_a_down_dependency(client, fakes):
+    fakes.fail["model-service/readyz"] = httpx.Response(503, json={"error": "not_configured"})
+    r = client.get("/v1/trace")
+    body = r.json()
+    assert r.status_code == 502 and body["ok"] is False and "model-service: HTTP 503" in body["detail"]
+    assert "rag-service" in [h["service"] for h in body["served_by"]]
+
+    fakes.fail["vector-db/readyz"] = httpx.ConnectError("refused")
+    assert client.get("/v1/trace").json()["detail"].startswith("vector-db: ConnectError")
