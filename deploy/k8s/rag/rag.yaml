@@ -1,0 +1,76 @@
+# rag-service: question -> embed (model-service) -> search (vector-db) -> prompt -> LLM (model-service).
+# Stateless, so any replica on any Pi can serve any request and a replacement pod works immediately.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag
+  labels: {app: rag}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: rag}
+  template:
+    metadata:
+      labels: {app: rag}
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: arm64          # Pi workers only (masters are amd64 VMs)
+      affinity:
+        podAntiAffinity:                   # spread replicas over Pis, but still schedule if Pis are down
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels: {app: rag}
+      tolerations:                         # leave a dead/unplugged node after 20 s instead of 5 min
+        - {key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 20}
+        - {key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 20}
+      containers:
+        - name: rag
+          image: CHANGE_ME_REGISTRY/rag:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - {name: VECTOR_DB_URL, value: "http://vector-db:8080"}
+            - {name: MODEL_SERVICE_URL, value: "http://model-service:8080"}   # CHANGE_ME if its Service differs
+            - {name: TOP_K, value: "5"}
+            - {name: MIN_SCORE, value: "0.0"}
+            - {name: MAX_CONTEXT_CHARS, value: "6000"}
+            - {name: KEYWORD_FALLBACK, value: "true"}
+            - {name: CHAT_TIMEOUT_S, value: "60"}
+            - {name: LOG_LEVEL, value: info}
+          resources:
+            requests: {cpu: 50m, memory: 48Mi}
+            limits: {memory: 128Mi}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 15
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag
+  labels: {app: rag}
+spec:
+  type: ClusterIP
+  selector: {app: rag}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
