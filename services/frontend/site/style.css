@@ -1,4 +1,4 @@
-/* SDS Course Assistant: styles, following the Chulalongkorn University CI guidelines (2018).
+/* KhunLook CU Course Assistant: styles, following the Chulalongkorn University CI guidelines (2018).
  *
  *   CU Pink           accents only (header stripe, focus ring, switch); 3.5:1 on white is too
  *                     low for small text
@@ -147,10 +147,17 @@ button, textarea, input { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) { .progress::after { animation: none; width: 100%; opacity: .5; } }
 
 .label { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--cu-grey); margin: 14px 0 6px; }
-.sources { display: flex; flex-wrap: wrap; gap: 6px; }
+.sources { display: grid; gap: 8px; min-width: 0; }
+.source-entry { min-width: 0; }
 .source {
+  display: inline-block; max-width: 100%; overflow-wrap: anywhere;
   background: var(--cu-light-pink); color: var(--eng-maroon);
-  border-radius: 999px; padding: 3px 12px; font-size: 14px;
+  border-radius: 12px; padding: 3px 12px; font-size: 14px;
+}
+summary.source { display: list-item; list-style-position: inside; cursor: pointer; }
+.source-passage {
+  margin: 8px 0 0; padding: 10px 12px; background: var(--surface); border-left: 3px solid var(--cu-pink);
+  font-size: 15px; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .not-covered { margin-top: 10px; font-size: 14px; color: var(--cu-grey); }
 
@@ -207,6 +214,7 @@ body.demo .served { display: block; }
 .tick.ok { background: var(--ok); }
 .tick.fail { background: var(--fail); }
 .trace-stats { font-size: 14px; color: var(--cu-grey); margin: 8px 0 0; }
+.trace-detail { font-size: 14px; color: var(--fail); margin: 8px 0 0; overflow-wrap: anywhere; }
 .chain-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .chain-list li { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12.5px; overflow-wrap: anywhere; }
 .chain-list .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--svc); flex: none; }

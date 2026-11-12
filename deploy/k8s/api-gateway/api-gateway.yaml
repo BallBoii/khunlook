@@ -40,14 +40,14 @@ spec:
           env:
             - name: POD_NAME
               valueFrom: {fieldRef: {fieldPath: metadata.name}}
-            - {name: RAG_URL, value: "http://rag-service:8080"}
+            - {name: RAG_URL, value: "http://rag:8080"}
             - {name: RATE_PER_MIN, value: "10"}       # per client
             - {name: RATE_BURST, value: "5"}          # per client
             - {name: GLOBAL_PER_MIN, value: "30"}     # per replica, protects the LLM budget
             - {name: MAX_INFLIGHT, value: "8"}        # per replica, protects the Pi's memory
             - {name: CONNECT_TIMEOUT_S, value: "2"}
-            - {name: CHAT_TIMEOUT_S, value: "45"}
-            - {name: TRACE_TIMEOUT_S, value: "3"}
+            - {name: CHAT_TIMEOUT_S, value: "90"}
+            - {name: TRACE_TIMEOUT_S, value: "5"}
             - {name: LOG_LEVEL, value: info}
           resources:
             requests: {cpu: 50m, memory: 64Mi}

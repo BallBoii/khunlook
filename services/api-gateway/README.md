@@ -17,7 +17,8 @@ For every `POST /api/v1/chat`:
    to protect the paid LLM. Over the limit → `429` with `Retry-After`.
 3. **Busy limit:** at most 8 questions waiting on rag-service per replica, to protect the Pi's
    1 GB of RAM. Over → `503 busy`.
-4. **Call rag-service** `POST /v1/answer`, with 2 s to connect and 45 s to answer.
+4. **Call rag-service** `POST /v1/answer`, with 2 s to connect and a 90 s overall deadline
+   covering connection, retry and response body (embed + search + chat in RAG).
    If the *connection* fails (e.g. a pod on a Pi that was just pulled), retry once on a new
    connection. Slow answers and server errors are never retried.
 5. **Return** the answer and sources, with this gateway added to the front of the `served_by` chain.
@@ -33,7 +34,7 @@ Every request gets an ID (`X-Request-ID`), an `X-Served-By: <pod>` header and on
 | `Dockerfile` | Builds the image. Default target `gateway` | **Yes**, the `gateway` target |
 | `../../deploy/k8s/api-gateway/api-gateway.yaml` | Kubernetes Deployment + Service | **Yes** |
 | `../../deploy/docker/compose.yaml` | Runs everything on a laptop | No, local testing only |
-| `tests/test_gateway.py` | 26 automated tests | No, run with `make test` |
+| `tests/test_gateway.py` | Contract, validation, limits, deadlines and failover tests | No, run with `make test` |
 
 ## API
 
@@ -49,9 +50,13 @@ Chat response:
 ```json
 {
   "request_id": "ec1a3dac…",
-  "answer": "The on-site demo is on November 17, 2026, 13:00–16:00.",
-  "sources": [{"doc_title": "SDS Final Project", "page": 10}],
-  "served_by": [{"service": "api-gateway", "pod": "api-gateway-5d2f8-xk9pq"}, "…rag-service, vector-db, model-service"]
+  "answer": "Course 2110221 covers computer engineering fundamentals [1].",
+  "sources": [{"n": 1, "doc_id": "2110221", "doc_title": "Computer Engineering Essentials",
+               "page": 1, "text": "Overview of computer engineering..."}],
+  "served_by": [{"service": "api-gateway", "pod": "api-gateway-5d2f8-xk9pq"},
+                {"service": "rag-service", "pod": "rag-1"},
+                {"service": "vector-db", "pod": "vector-db-1"},
+                {"service": "model-service", "pod": "model-service-1"}]
 }
 ```
 
@@ -64,25 +69,31 @@ GET  /v1/trace                                       →  {"ok": true, "served_b
 
 Errors always look like `{"error": "<code>", "detail": "<text>", "request_id": "…"}`:
 
+Errors also include `served_by`, with at least this gateway. RAG errors preserve their code,
+detail, retrieved `sources` and reached pods. The gateway accepts both RAG's list of hops and
+its detailed dictionary (`model-service (embed)` / `(chat)`), normalizes them to one list and
+deduplicates identical service/pod pairs. Distinct model pods remain separate.
+
 | Situation | Status | `error` |
 | --- | --- | --- |
 | Empty, too long or malformed question | 400 | `invalid_request` |
 | Over the per-client or global rate limit | 429 + `Retry-After` | `rate_limited` |
 | Too many questions in progress | 503 | `busy` |
 | rag-service unreachable after one retry | 503 | `upstream_unavailable` |
-| rag-service slower than 45 s | 504 | `upstream_timeout` |
-| rag-service error or unreadable reply | 502 | `upstream_error` |
+| rag-service exceeds the 90 s overall deadline | 504 | `upstream_timeout` |
+| rag-service returns a server error | 502 | rag-service's own code, or `upstream_error` |
+| Unreadable reply or invalid/empty answer | 502 | `upstream_error` |
 | rag-service rejected the question (4xx) | passed through | rag-service's own code |
 
 ## Settings (environment variables, set in the k8s manifest)
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `RAG_URL` | `http://rag-service:8080` | rag-service address |
+| `RAG_URL` | `http://rag:8080` | Kubernetes Service is named `rag`; Compose overrides this to `http://rag-service:8080` |
 | `RATE_PER_MIN` / `RATE_BURST` | `10` / `5` | Per-client limit (client = `X-Real-IP` set by nginx) |
 | `GLOBAL_PER_MIN` | `30` | All clients, per replica |
 | `MAX_INFLIGHT` | `8` | Questions in progress, per replica |
-| `CONNECT_TIMEOUT_S` / `CHAT_TIMEOUT_S` / `TRACE_TIMEOUT_S` | `2` / `45` / `3` | Timeouts |
+| `CONNECT_TIMEOUT_S` / `CHAT_TIMEOUT_S` / `TRACE_TIMEOUT_S` | `2` / `90` / `5` | Connect timeout / overall chat deadline / overall trace deadline |
 | `MAX_QUESTION_CHARS` / `MAX_TOP_K` | `1000` / `10` | Input limits |
 | `POD_NAME` | hostname | Pod name, from the manifest |
 
@@ -92,13 +103,29 @@ From the repo root:
 
 ```bash
 make setup     # once: Python packages (use a virtualenv)
-make test      # all tests, including these 26
+make test      # all Python service tests plus frontend tests (Node.js 18+)
 make dev-up    # the whole stack (needs services/model/.env) → http://localhost:8080/?demo
 make dev-down
 ```
 
 `dev-up` runs the real rag-service, vector-db and model-service, so every question is a real (very cheap)
 OpenRouter call. To try the gateway alone, point `RAG_URL` at any server that implements the contract above.
+
+Gateway-only tests use fake upstream responses and do not call a paid API:
+
+```bash
+python -m pip install -r services/api-gateway/requirements.txt pytest
+python -m pytest services/api-gateway/tests -q
+```
+
+The frontend waits 110 s and nginx waits 100 s, above the gateway's 90 s chat deadline. If the
+RAG embed/search/chat budgets change, adjust all three layers together. Trace has a 5 s overall
+deadline, and the frontend allows 10 s including nginx connections. A healthy trace requires
+HTTP 200 with the JSON boolean `ok: true`; missing, malformed or truthy string values fail.
+Dependency failure details and the partial pod chain are returned for the demo panel.
+
+The current index contains CU course documents. The RAG owner still needs to update its SDS
+system prompt to match that corpus; the gateway forwards the question and does not change the prompt.
 
 ## Deploy to the cluster
 

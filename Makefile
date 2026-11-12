@@ -2,6 +2,7 @@
 # Every target is a thin wrapper, so on Windows without make you can run the command on the
 # right directly.
 PY        ?= python
+NODE      ?= node
 REGISTRY  ?= CHANGE_ME_REGISTRY
 VERSION   ?= 1.0.0
 PLATFORMS ?= linux/arm64,linux/amd64
@@ -17,7 +18,7 @@ MODEL_IMAGE    ?= $(REGISTRY)/model-service:$(VERSION)
 COMPOSE        = docker compose -f deploy/docker/compose.yaml
 
 .PHONY: setup ingest estimate eval validate-index test build-vector-db push-vector-db run-vector-db \
-        build-api-gateway push-api-gateway build-frontend push-frontend build-rag push-rag build-model-service push-model-service run-model-service dev-up dev-down deploy-web
+        build-api-gateway push-api-gateway build-frontend push-frontend test-frontend build-rag push-rag build-model-service push-model-service run-model-service dev-up dev-down deploy-web
 
 setup:            ## install dev deps
 	$(PY) -m pip install -r ingest/requirements.txt -r services/vector-db/requirements.txt -r services/api-gateway/requirements.txt -r services/model/requirements.txt -r services/rag/requirements.txt
@@ -38,6 +39,10 @@ test:
 	@# one pytest run per service: each service is a package named `app`, so they can't share a process
 	$(PY) -m pytest ingest/tests -q
 	@for s in vector-db api-gateway model rag; do $(PY) -m pytest services/$$s/tests -q || exit 1; done
+	$(MAKE) test-frontend
+
+test-frontend:     ## browser behaviour with fake API replies; Node.js 18+ (no npm packages)
+	$(NODE) --test services/frontend/tests/test_app.cjs
 
 build-vector-db: validate-index   ## local single-arch image
 	$(DOCKER_BUILD) --load .

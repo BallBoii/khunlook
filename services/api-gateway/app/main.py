@@ -6,7 +6,7 @@ Request flow:
 The gateway does not answer questions itself. It adds the policy around rag-service:
 
     validate the question  ->  rate limit  ->  cap requests in flight
-    ->  call rag-service (2 s connect timeout, one retry if the connection fails)
+    ->  call rag-service (2 s connect timeout, one retry within an overall deadline)
     ->  add this pod to the `served_by` chain  ->  return answer + sources + chain
 
 It keeps no state that matters (limits live in memory), so any replica on any Pi can serve any
@@ -17,6 +17,7 @@ Settings come from environment variables (see Settings and deploy/k8s/api-gatewa
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -51,7 +52,7 @@ class Settings:
     """Every tunable, read once from environment variables."""
 
     def __init__(self) -> None:
-        self.rag_url = os.environ.get("RAG_URL", "http://rag-service:8080").rstrip("/")
+        self.rag_url = os.environ.get("RAG_URL", "http://rag:8080").rstrip("/")
         # Rate limits: per client (token bucket) and per replica for all clients together.
         self.rate_per_min = env_float("RATE_PER_MIN", 10)
         self.rate_burst = env_float("RATE_BURST", 5)
@@ -59,8 +60,8 @@ class Settings:
         self.max_inflight = int(env_float("MAX_INFLIGHT", 8))      # protects the Pi's 1 GB of RAM
         # Timeouts (seconds) for calls to rag-service.
         self.connect_timeout = env_float("CONNECT_TIMEOUT_S", 2)   # short: a dead pod never answers
-        self.chat_timeout = env_float("CHAT_TIMEOUT_S", 45)        # long: LLM answers are slow
-        self.trace_timeout = env_float("TRACE_TIMEOUT_S", 3)
+        self.chat_timeout = env_float("CHAT_TIMEOUT_S", 90)        # embed + search + chat, including retry
+        self.trace_timeout = env_float("TRACE_TIMEOUT_S", 5)
         # Input limits.
         self.max_question_chars = int(env_float("MAX_QUESTION_CHARS", 1000))
         self.max_top_k = int(env_float("MAX_TOP_K", 10))
@@ -143,12 +144,18 @@ def client_key(request: Request) -> str:
 # =============================================================================================
 
 class APIError(Exception):
-    def __init__(self, status: int, error: str, detail: str, headers: dict | None = None):
+    def __init__(self, status: int, error: str, detail: str, headers: dict | None = None,
+                 *, sources: list | None = None, served_by: list | None = None):
         self.status, self.error, self.detail, self.headers = status, error, detail, headers or {}
+        self.sources, self.served_by = sources, served_by
 
 
-def error_response(request: Request, status: int, error: str, detail: str, headers: dict | None = None):
-    body = {"error": error, "detail": detail, "request_id": getattr(request.state, "request_id", None)}
+def error_response(request: Request, status: int, error: str, detail: str, headers: dict | None = None,
+                   *, sources: list | None = None, served_by: list | None = None):
+    body = {"error": error, "detail": detail, "request_id": getattr(request.state, "request_id", None),
+            "served_by": served_by or [served_by_entry()]}
+    if sources is not None:
+        body["sources"] = sources
     return JSONResponse(body, status_code=status, headers=headers)
 
 
@@ -187,17 +194,21 @@ async def call_upstream(app: FastAPI, method: str, path: str, request_id: str, t
     headers = {"X-Request-ID": request_id}
     to = httpx.Timeout(timeout, connect=s.connect_timeout)
     last: Exception | None = None
-    for attempt in (1, 2):
-        try:
-            return await client.request(method, f"{s.rag_url}{path}", json=json_body, headers=headers, timeout=to)
-        except (httpx.ConnectError, httpx.ConnectTimeout) as e:      # nothing sent: safe to retry
-            last = e
-            log_json(logging.WARNING, event="upstream_connect_failed", request_id=request_id,
-                     path=path, attempt=attempt, reason=type(e).__name__)
-        except httpx.TimeoutException as e:                          # sent, but too slow
-            raise APIError(504, "upstream_timeout", f"rag-service did not answer within {timeout:g} s") from e
-        except httpx.HTTPError as e:                                 # connection broke mid-way
-            raise APIError(502, "upstream_error", f"rag-service connection broke: {type(e).__name__}") from e
+    try:
+        async with asyncio.timeout(timeout):  # includes both attempts, connection and response body
+            for attempt in (1, 2):
+                try:
+                    return await client.request(method, f"{s.rag_url}{path}", json=json_body, headers=headers, timeout=to)
+                except (httpx.ConnectError, httpx.ConnectTimeout) as e:  # nothing sent: safe to retry
+                    last = e
+                    log_json(logging.WARNING, event="upstream_connect_failed", request_id=request_id,
+                             path=path, attempt=attempt, reason=type(e).__name__)
+                except httpx.TimeoutException as e:
+                    raise APIError(504, "upstream_timeout", f"rag-service did not answer within {timeout:g} s") from e
+                except httpx.HTTPError as e:
+                    raise APIError(502, "upstream_error", f"rag-service connection broke: {type(e).__name__}") from e
+    except TimeoutError as e:
+        raise APIError(504, "upstream_timeout", f"rag-service did not answer within {timeout:g} s") from e
     raise APIError(503, "upstream_unavailable", "rag-service is unreachable, it may be recovering") from last
 
 
@@ -216,12 +227,37 @@ def served_by_entry() -> dict:
 
 
 def upstream_chain(resp: httpx.Response, body: dict | None) -> list[dict]:
-    """The chain rag-service reports in its body, or at least its own pod from X-Served-By."""
-    chain = (body or {}).get("served_by")
-    if isinstance(chain, list):
-        return [c for c in chain if isinstance(c, dict) and "service" in c and "pod" in c]
+    """Normalize RAG's success list and its detailed error dict, keeping distinct model pods."""
+    raw = (body or {}).get("served_by")
+    if isinstance(raw, dict):
+        entries = [{"service": key.split(" (", 1)[0], "pod": pod} for key, pod in raw.items()]
+    else:
+        entries = raw if isinstance(raw, list) else []
+    chain = []
+    for hop in entries:
+        if not isinstance(hop, dict):
+            continue
+        service, pod = hop.get("service"), hop.get("pod")
+        if not isinstance(service, str) or not service.strip() or not isinstance(pod, str) or not pod.strip():
+            continue
+        entry = {"service": service, "pod": pod}
+        if service != SERVICE and entry not in chain:
+            chain.append(entry)
     pod = resp.headers.get("x-served-by")
-    return [{"service": "rag-service", "pod": pod}] if pod else []
+    if pod and not any(h["service"] == "rag-service" for h in chain):
+        chain.insert(0, {"service": "rag-service", "pod": pod})
+    order = {"rag-service": 0, "vector-db": 1, "model-service": 2}
+    return sorted(chain, key=lambda h: order.get(h["service"], 99))
+
+
+def upstream_sources(body: dict | None) -> list[dict]:
+    sources = (body or {}).get("sources")
+    return [s for s in sources if isinstance(s, dict)] if isinstance(sources, list) else []
+
+
+def upstream_text(body: dict | None, key: str, default: str) -> str:
+    value = (body or {}).get(key)
+    return value if isinstance(value, str) and value.strip() else default
 
 
 # =============================================================================================
@@ -236,7 +272,7 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None, settings: Sett
     async def lifespan(app: FastAPI):
         _setup_logging()
         # No keep-alive: a reused connection could stay pinned to a pod on an unplugged Pi and
-        # hang until the 45 s timeout. A new connection per call also spreads load over replicas.
+        # hang until the chat deadline. A new connection per call also spreads load over replicas.
         app.state.http = httpx.AsyncClient(transport=transport, limits=httpx.Limits(max_keepalive_connections=0))
         log_json(logging.INFO, event="startup", version=VERSION, rag_url=app.state.settings.rag_url)
         yield
@@ -251,7 +287,8 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None, settings: Sett
 
     @app.exception_handler(APIError)
     async def _api_error(request: Request, e: APIError):
-        return error_response(request, e.status, e.error, e.detail, e.headers)
+        return error_response(request, e.status, e.error, e.detail, e.headers,
+                              sources=e.sources, served_by=e.served_by)
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(request: Request, e: RequestValidationError):
@@ -331,21 +368,23 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None, settings: Sett
         data = parse_json(resp)
         request.state.upstream = {"upstream_status": resp.status_code,
                                   "upstream_pod": resp.headers.get("x-served-by")}
-        if resp.status_code >= 500:
-            raise APIError(502, "upstream_error", (data or {}).get("detail") or f"rag-service returned {resp.status_code}")
+        chain = [served_by_entry(), *upstream_chain(resp, data)]
         if resp.status_code >= 400:
-            # rag-service's own client errors (e.g. a question it rejects) pass through unchanged.
-            data = data or {"error": "upstream_rejected", "detail": f"rag-service returned {resp.status_code}"}
-            data["request_id"] = request.state.request_id
-            return JSONResponse(data, status_code=resp.status_code)
-        if data is None or "answer" not in data:
-            raise APIError(502, "upstream_error", "rag-service returned an unexpected response")
+            # Preserve useful RAG failures (including passages retrieved before chat failed).
+            server_error = resp.status_code >= 500
+            headers = {"Retry-After": resp.headers["retry-after"]} if "retry-after" in resp.headers else None
+            raise APIError(502 if server_error else resp.status_code,
+                           upstream_text(data, "error", "upstream_error" if server_error else "upstream_rejected"),
+                           upstream_text(data, "detail", f"rag-service returned {resp.status_code}"), headers,
+                           sources=upstream_sources(data), served_by=chain)
+        if resp.status_code != 200 or not isinstance((data or {}).get("answer"), str) or not data["answer"].strip():
+            raise APIError(502, "upstream_error", "rag-service returned an unexpected response", served_by=chain)
 
         return {
             "request_id": request.state.request_id,
             "answer": data["answer"],
-            "sources": data.get("sources") or [],
-            "served_by": [served_by_entry(), *upstream_chain(resp, data)],
+            "sources": upstream_sources(data),
+            "served_by": chain,
         }
 
     @app.get("/api/v1/trace")
@@ -369,8 +408,12 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None, settings: Sett
             return result(False, e.status, error=e.error, detail=e.detail)
         data = parse_json(resp)
         chain += upstream_chain(resp, data)
-        ok = resp.status_code < 400 and bool((data or {}).get("ok", True))
-        return result(ok, 200 if ok else 502)
+        ok = resp.status_code == 200 and (data or {}).get("ok") is True
+        if ok:
+            return result(True, 200)
+        return result(False, 502,
+                      error=upstream_text(data, "error", "upstream_error"),
+                      detail=upstream_text(data, "detail", "rag-service returned an invalid or failed trace response"))
 
     return app
 

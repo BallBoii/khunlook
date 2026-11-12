@@ -1,12 +1,12 @@
 <!doctype html>
-<!-- SDS Course Assistant: the whole UI is this one page. Behaviour in app.js, look in style.css.
+<!-- KhunLook CU Course Assistant: the whole UI is this one page. Behaviour in app.js, look in style.css.
      Interface in English; questions can be asked in English or Thai. -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SDS Course Assistant</title>
-  <meta name="description" content="Ask questions about the 2110415 Software-Defined Systems course slides.">
+  <title>KhunLook · CU Course Assistant</title>
+  <meta name="description" content="Ask questions about Chulalongkorn University courses using the available course documents.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -19,8 +19,8 @@
         <img class="logo" id="logo" src="assets/chula-engineering-logo.png"
              alt="Chula Engineering" width="563" height="80" onerror="this.remove()">
         <div class="titles">
-          <h1>SDS Course Assistant</h1>
-          <p class="subtitle">2110415 Software-Defined Systems</p>
+          <h1>KhunLook</h1>
+          <p class="subtitle">CU Course Assistant</p>
           <p class="dept">Department of Computer Engineering</p>
         </div>
       </div>
@@ -41,14 +41,14 @@
     <section class="chat" aria-label="Chat">
       <div class="messages" id="messages" aria-live="polite">
         <div class="empty" id="empty">
-          <h2>Ask anything about the course</h2>
-          <p>Answers come only from the course slides, with the page they came from.<br>You can ask in English or Thai.</p>
+          <h2>Explore CU courses</h2>
+          <p>Ask about the courses in our document collection, with numbered supporting passages.<br>You can ask in English or Thai.</p>
           <div class="examples" id="examples">
-            <button type="button">When is the on-site demo?</button>
-            <button type="button">What must the GitHub repo include?</button>
-            <button type="button" lang="th">ต้องส่งอะไรบ้างในวันเดโม</button>
-            <button type="button">How many Raspberry Pis does each group need?</button>
-            <button type="button">What happens if a Raspberry Pi goes offline?</button>
+            <button type="button">What is course 2110221 about?</button>
+            <button type="button">How many credits is course 0123101?</button>
+            <button type="button" lang="th">วิชา 2110221 เรียนเกี่ยวกับอะไร</button>
+            <button type="button" lang="th">วิชา 0123101 เรียนวันไหน</button>
+            <button type="button" lang="th">วิชา 2110221 มีวันสอบเมื่อไหร่</button>
           </div>
         </div>
       </div>
@@ -56,7 +56,7 @@
       <form class="composer" id="composer" autocomplete="off">
         <label class="visually-hidden" for="question">Question</label>
         <textarea id="question" rows="1" maxlength="1000"
-                  placeholder="Ask about the course…" required></textarea>
+                  placeholder="Ask about a CU course…" required></textarea>
         <button type="submit" id="send">Send</button>
       </form>
     </section>
@@ -65,10 +65,11 @@
     <aside class="trace" id="trace" aria-label="Live trace" hidden>
       <div class="trace-head">
         <h2>Live trace</h2>
-        <p>Every 2 s, no LLM call</p>
+        <p>Checks 2 s apart, no LLM call</p>
       </div>
       <div class="ticks" id="ticks" aria-label="Recent trace results"></div>
       <p class="trace-stats" id="trace-stats">–</p>
+      <p class="trace-detail" id="trace-detail" role="status" hidden></p>
       <h3>Latest chain</h3>
       <ol class="chain-list" id="chain-list"></ol>
       <p class="trace-note">New pod names appear after a Pi is pulled.</p>

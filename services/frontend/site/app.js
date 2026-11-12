@@ -1,4 +1,4 @@
-/* SDS Course Assistant: chat page and live trace panel. Plain JavaScript, no build step.
+/* KhunLook CU Course Assistant: chat page and live trace panel. Plain JavaScript, no build step.
  *
  * The page talks only to its own nginx (same origin); nginx forwards /api/* to api-gateway.
  *
@@ -18,10 +18,10 @@
   // =========================================================================================
 
   const API = "/api/v1";
-  const CHAT_TIMEOUT_MS = 60_000;    // above the gateway's 45 s, so its clearer error arrives first
+  const CHAT_TIMEOUT_MS = 110_000;   // gateway deadline 90 s, nginx read timeout 100 s
   const RETRY_DELAY_MS = 2_000;      // wait before the one automatic retry during a failover
   const TRACE_EVERY_MS = 2_000;      // pause between trace checks
-  const TRACE_TIMEOUT_MS = 3_000;    // a trace check slower than this counts as failed
+  const TRACE_TIMEOUT_MS = 10_000;   // gateway deadline 5 s, with room for nginx connection retries
   const TRACE_TICKS = 30;            // ~1 minute of history; must match the grid in style.css
   const NEW_POD_HIGHLIGHT_MS = 10_000;
 
@@ -34,7 +34,7 @@
     messages: $("messages"), empty: $("empty"), examples: $("examples"), composer: $("composer"),
     question: $("question"), send: $("send"), banner: $("banner"), layout: $("layout"),
     trace: $("trace"), toggle: $("demo-toggle"), ticks: $("ticks"), stats: $("trace-stats"),
-    chainList: $("chain-list"), logo: $("logo"),
+    chainList: $("chain-list"), traceDetail: $("trace-detail"), logo: $("logo"),
   };
 
   // =========================================================================================
@@ -86,6 +86,7 @@
         try { data = await res.json(); } catch { data = null; }
       }
       return { status: res.status, data, frontendPod: res.headers.get("X-Served-By"),
+               requestId: res.headers.get("X-Request-ID"),
                retryAfter: res.headers.get("Retry-After"), ms: performance.now() - started };
     } finally {
       clearTimeout(timer);
@@ -101,7 +102,8 @@
 
   /** frontend pod (from the header) + the chain from the body. */
   function fullChain(frontendPod, servedBy) {
-    const chain = Array.isArray(servedBy) ? servedBy.slice() : [];
+    const chain = Array.isArray(servedBy) ? servedBy.filter((h) => h &&
+      typeof h.service === "string" && h.service && typeof h.pod === "string" && h.pod) : [];
     if (frontendPod) chain.unshift({ service: "frontend", pod: frontendPod });
     return chain;
   }
@@ -125,16 +127,63 @@
   /** Placeholder card shown while waiting; filled later by fillAnswer or fillMessage. */
   function addPendingCard() {
     const card = el("article", { class: "msg-answer pending" },
-      el("div", { class: "text" }, el("p", { text: "Searching the slides…" })),
+      el("div", { class: "text" }, el("p", { text: "Searching course information…" })),
       el("div", { class: "progress", "aria-hidden": "true" }));
     els.messages.append(card);
     scrollToEnd();
     return card;
   }
 
-  /** Answer text, source chips (or "not covered"), then the demo-only pod chain and timing. */
+  /** Keep every passage number, even when several passages come from the same course. */
+  function appendSources(card, data, partial = false) {
+    const sources = Array.isArray(data?.sources) ? data.sources.filter((s) => s && typeof s === "object") : [];
+    if (!sources.length) return false;
+    const list = el("div", { class: "sources" });
+    sources.forEach((source, index) => {
+      const n = Number.isInteger(source.n) && source.n > 0 ? source.n : index + 1;
+      const docId = typeof source.doc_id === "string" ? source.doc_id : "";
+      const title = typeof source.doc_title === "string" && source.doc_title ? source.doc_title : docId || "Source";
+      // The current corpus uses seven-digit course IDs and page=1 as a placeholder.
+      // Keep genuine page numbers for other document IDs, such as slide decks.
+      const isCourse = /^\d{7}$/.test(docId);
+      const page = !isCourse && Number.isInteger(source.page) && source.page > 0 ? ` · p.${source.page}` : "";
+      const label = `[${n}] ${isCourse && !title.includes(docId) ? `${docId} · ` : ""}${title}${page}`;
+      if (typeof source.text === "string" && source.text.trim()) {
+        list.append(el("details", { class: "source-entry" },
+          el("summary", { class: "source", text: label }),
+          el("p", { class: "source-passage", text: source.text })));
+      } else {
+        list.append(el("div", { class: "source-entry" }, el("span", { class: "source", text: label })));
+      }
+    });
+    card.append(el("div", { class: "label", text: partial ? "Retrieved passages · answer unavailable" : "Sources" }), list);
+    return true;
+  }
+
+  /** Demo-only metadata is shared by successful answers and errors. */
+  function appendServed(card, result) {
+    const data = result.data || {};
+    const served = el("div", { class: "served" });
+    const chain = fullChain(result.frontendPod, data.served_by);
+    if (chain.length) {
+      served.append(el("div", { class: "label", text: `Served by · ${chain.length} containers` }),
+                    renderChain(chain),
+                    el("div", { class: "pods", text: chain.map((h) => h.pod).join(" › ") }));
+    }
+    const meta = [];
+    if (Number.isFinite(result.ms)) meta.push(`${(result.ms / 1000).toFixed(1)} s`);
+    if (data.request_id || result.requestId) meta.push(`request ${data.request_id || result.requestId}`);
+    if (typeof data.error === "string") meta.push(`error ${data.error}`);
+    if (meta.length) served.append(el("div", { class: "meta", text: meta.join(" · ") }));
+    if (typeof data.detail === "string" && data.error) {
+      served.append(el("div", { class: "meta", text: data.detail }));
+    }
+    card.append(served);
+  }
+
+  /** Answer text, numbered passages, then the demo-only pod chain and timing. */
   function fillAnswer(card, result) {
-    const { data, frontendPod, ms } = result;
+    const { data } = result;
     card.className = "msg-answer";
     card.replaceChildren();
 
@@ -142,34 +191,18 @@
     String(data.answer || "").split(/\n{2,}/).forEach((para) => text.append(el("p", { text: para })));
     card.append(text);
 
-    const sources = Array.isArray(data.sources) ? data.sources : [];
-    if (sources.length) {
-      const labels = new Set(sources.map((s) =>      // e.g. "SDS Final Project · p.10", no duplicates
-        [s.doc_title || s.doc_id || "Source", s.page != null ? `p.${s.page}` : null].filter(Boolean).join(" · ")));
-      card.append(el("div", { class: "label", text: "Sources" }),
-                  el("div", { class: "sources" }, ...[...labels].map((l) => el("span", { class: "source", text: l }))));
-    } else {
-      card.append(el("p", { class: "not-covered", text: "Not covered in the course slides" }));
+    if (!appendSources(card, data)) {
+      card.append(el("p", { class: "not-covered", text: "No supporting passages were returned" }));
     }
-
-    // Shown only in demo mode (body.demo .served in style.css).
-    const served = el("div", { class: "served" });
-    const chain = fullChain(frontendPod, data.served_by);
-    if (chain.length) {
-      served.append(el("div", { class: "label", text: `Served by · ${chain.length} containers` }),
-                    renderChain(chain),
-                    el("div", { class: "pods", text: chain.map((h) => h.pod).join(" › ") }));
-    }
-    served.append(el("div", { class: "meta",
-      text: `${(ms / 1000).toFixed(1)} s · request ${String(data.request_id || "").slice(0, 8)}` }));
-    card.append(served);
+    appendServed(card, result);
   }
 
   /** An error or notice in place of an answer. `kind` is "error" (red) or "notice" (grey). */
-  function fillMessage(card, kind, message, frontendPod) {
+  function fillMessage(card, kind, message, result) {
     card.className = `msg-answer ${kind}`;
     card.replaceChildren(el("div", { class: "text" }, el("p", { text: message })));
-    if (frontendPod) card.append(el("div", { class: "served" }, el("div", { class: "pods", text: `frontend ${frontendPod}` })));
+    appendSources(card, result.data, true);
+    appendServed(card, result);
   }
 
   // =========================================================================================
@@ -190,6 +223,12 @@
     if (result.timedOut) return "The answer took too long, please try again";
     if (result.networkError) return "Can't reach the service, please try again";
     const d = result.data || {};
+    const serviceErrors = {
+      model_service_unavailable: "The answer service is unavailable, please try again shortly",
+      vector_db_unavailable: "Course search is unavailable, please try again shortly",
+      embedding_mismatch: "Course search is temporarily unavailable, please try again later",
+    };
+    if (serviceErrors[d.error]) return serviceErrors[d.error];
     switch (result.status) {
       case 400: return `Invalid question: ${d.detail || "please rephrase"}`;
       case 429: return `Too many questions, please wait ${result.retryAfter || "a few"} s`;
@@ -197,7 +236,7 @@
         ? "Busy with other questions, please try again shortly"
         : "The service is recovering, please try again";
       case 504: return "The answer took too long, please try again";
-      default:  return `Something went wrong (${result.status})${d.detail ? `: ${d.detail}` : ""}`;
+      default:  return `Something went wrong (${result.status}), please try again`;
     }
   }
 
@@ -214,7 +253,7 @@
         } catch (e) {
           result = e.name === "AbortError" ? { timedOut: true } : { networkError: true };
         }
-        const ok = result.status === 200 && result.data;
+        const ok = result.status === 200 && typeof result.data?.answer === "string" && result.data.answer.trim();
         if (ok || attempt === 2 || !isRecoverable(result)) break;
         showBanner("Recovering, retrying…");
         await sleep(RETRY_DELAY_MS);
@@ -224,9 +263,9 @@
       setBusy(false);
     }
 
-    if (result.status === 200 && result.data) fillAnswer(card, result);
+    if (result.status === 200 && typeof result.data?.answer === "string" && result.data.answer.trim()) fillAnswer(card, result);
     else fillMessage(card, result.status === 429 || result.data?.error === "busy" ? "notice" : "error",
-                     errorText(result), result.frontendPod);
+                     errorText(result), result);
     scrollToEnd();
   }
 
@@ -275,17 +314,24 @@
 
   async function traceOnce() {
     let r = null;
-    try { r = await call("/trace", { timeoutMs: TRACE_TIMEOUT_MS }); } catch { r = null; }
-    const ok = !!(r && r.status === 200 && r.data?.ok);
+    let failure = "";
+    try { r = await call("/trace", { timeoutMs: TRACE_TIMEOUT_MS }); }
+    catch (e) { failure = e.name === "AbortError" ? "Trace check timed out" : "Can't reach the service"; }
+    const ok = !!(r && r.status === 200 && r.data?.ok === true);
+    if (!ok && !failure) {
+      failure = typeof r.data?.detail === "string" ? r.data.detail : `Trace check failed (HTTP ${r.status})`;
+    }
 
-    trace.results.push({ ok, ms: r?.ms });
+    trace.results.push({ ok, ms: r?.ms, detail: failure });
     if (trace.results.length > TRACE_TICKS) trace.results.shift();
     ok ? trace.ok++ : trace.fail++;
 
     renderTicks();
     const chain = r ? fullChain(r.frontendPod, r.data?.served_by) : [];
-    if (chain.length) renderTraceChain(chain);
+    renderTraceChain(chain);  // clear stale pods when this check could not reach them
     els.stats.textContent = `${trace.ok} ok · ${trace.fail} failed` + (ok ? ` · last ${Math.round(r.ms)} ms` : "");
+    els.traceDetail.textContent = failure;
+    els.traceDetail.hidden = ok;
   }
 
   function renderTicks() {
@@ -294,7 +340,7 @@
     for (let i = 0; i < TRACE_TICKS; i++) {
       const res = i < missing ? null : trace.results[i - missing];
       cells.push(el("span", { class: `tick ${res ? (res.ok ? "ok" : "fail") : ""}`,
-                              title: res ? (res.ok ? `ok ${Math.round(res.ms || 0)} ms` : "failed") : "" }));
+                              title: res ? (res.ok ? `ok ${Math.round(res.ms || 0)} ms` : res.detail || "failed") : "" }));
     }
     els.ticks.replaceChildren(...cells);
   }
