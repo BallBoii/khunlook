@@ -3,22 +3,24 @@
 # right directly.
 PY        ?= python
 NODE      ?= node
-REGISTRY  ?= CHANGE_ME_REGISTRY
+REGISTRY  ?= ghcr.io/ballboii
 VERSION   ?= 1.0.0
-PLATFORMS ?= linux/arm64,linux/amd64
+# The whole cluster (UTM master VM on Apple Silicon + Pis) is arm64.
+PLATFORMS ?= linux/arm64
 IDX       := $(shell $(PY) -c "import json;print(json.load(open('index/manifest.json'))['index_version'])" 2>/dev/null)
-IMAGE     ?= $(REGISTRY)/vector-db:$(VERSION)-idx$(IDX)
+IMAGE     ?= $(REGISTRY)/khunlook-vector-db:$(VERSION)-idx$(IDX)
 DOCKER_BUILD = docker buildx build -f services/vector-db/Dockerfile -t $(IMAGE)
-GATEWAY_IMAGE  ?= $(REGISTRY)/api-gateway:$(VERSION)
-FRONTEND_IMAGE ?= $(REGISTRY)/frontend:$(VERSION)
+GATEWAY_IMAGE  ?= $(REGISTRY)/khunlook-api-gateway:$(VERSION)
+FRONTEND_IMAGE ?= $(REGISTRY)/khunlook-frontend:$(VERSION)
 RAG_LOCAL      ?= rag:$(VERSION)
-RAG_IMAGE      ?= $(REGISTRY)/rag:$(VERSION)
+RAG_IMAGE      ?= $(REGISTRY)/khunlook-rag:$(VERSION)
 MODEL_LOCAL    ?= model-service:$(VERSION)
-MODEL_IMAGE    ?= $(REGISTRY)/model-service:$(VERSION)
+MODEL_IMAGE    ?= $(REGISTRY)/khunlook-model-service:$(VERSION)
 COMPOSE        = docker compose -f deploy/docker/compose.yaml
 
 .PHONY: setup ingest estimate eval validate-index test build-vector-db push-vector-db run-vector-db \
-        build-api-gateway push-api-gateway build-frontend push-frontend test-frontend build-rag push-rag build-model-service push-model-service run-model-service dev-up dev-down deploy-web
+        build-api-gateway push-api-gateway build-frontend push-frontend test-frontend build-rag push-rag build-model-service push-model-service run-model-service dev-up dev-down \
+        cluster render argocd-password
 
 setup:            ## install dev deps
 	$(PY) -m pip install -r ingest/requirements.txt -r services/vector-db/requirements.txt -r services/api-gateway/requirements.txt -r services/model/requirements.txt -r services/rag/requirements.txt
@@ -89,5 +91,16 @@ dev-up:              ## whole stack (frontend, gateway, rag, vector-db, model-se
 dev-down:
 	$(COMPOSE) down
 
-deploy-web:          ## apply both manifests together (nginx needs the api-gateway Service)
-	kubectl apply -f deploy/k8s/api-gateway/api-gateway.yaml -f deploy/k8s/frontend/frontend.yaml
+# ---- cluster (infra/README.md) -------------------------------------------------------------
+# Normal deploys need none of these: push to main, CI builds and bumps deploy/k8s, Argo CD syncs.
+# `make push-*` is only a manual fallback (images go to $(REGISTRY), the same names CI uses).
+KUBECONFIG_LOCAL ?= infra/ansible/artifacts/kubeconfig
+
+cluster:             ## build/refresh the whole cluster + Argo CD (needs ansible-core, vault password)
+	cd infra/ansible && ansible-playbook site.yml --ask-vault-pass
+
+render:              ## print exactly what Argo CD will apply
+	kubectl kustomize deploy/k8s
+
+argocd-password:     ## initial Argo CD admin password
+	@kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
