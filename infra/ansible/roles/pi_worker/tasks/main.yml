@@ -8,16 +8,48 @@
     fail_msg: "{{ inventory_hostname }} runs {{ ansible_architecture }}; reflash with a 64-bit image."
 
 - name: Enable memory cgroups on the kernel command line
+  # `.+?` (not `.*?`) so the empty "line" after the final newline never matches: cmdline.txt must
+  # stay a single line, with the flags added exactly once.
   ansible.builtin.replace:
     path: "{{ cmdline }}"
-    regexp: '^(?!.*cgroup_memory=1)(.*?)\s*$'
+    regexp: '^(?!.*cgroup_memory=1)(.+?)\s*$'
     replace: '\1 cgroup_enable=cpuset cgroup_memory=1 cgroup_enable=memory'
-  register: cgroups
 
-- name: Reboot if the command line changed
-  ansible.builtin.reboot:
-    reboot_timeout: 600
-  when: cgroups.changed
+# Reboot only if the RUNNING kernel lacks the flags, so a re-run after an interrupted reboot
+# reboots again, and a re-run after a good reboot skips it.
+- name: Flags in the running kernel
+  ansible.builtin.command: cat /proc/cmdline
+  register: proc_cmdline
+  changed_when: false
+
+- name: Reboot to apply the cgroup flags
+  when: "'cgroup_memory=1' not in proc_cmdline.stdout"
+  block:
+    # Fire-and-forget reboot + wait for SSH. (The reboot module's boot-id check can time out over
+    # a reused SSH connection even though the Pi is back.)
+    - name: Reboot
+      ansible.builtin.shell: sleep 2 && systemctl reboot
+      async: 30
+      poll: 0
+      changed_when: true
+
+    - name: Wait for the Pi to go down and come back
+      ansible.builtin.wait_for_connection:
+        delay: 45
+        timeout: 600
+
+    - name: Flags in the running kernel after reboot
+      ansible.builtin.command: cat /proc/cmdline
+      register: proc_cmdline
+      changed_when: false
+
+- name: Memory cgroups are active
+  ansible.builtin.assert:
+    that: "'cgroup_memory=1' in proc_cmdline.stdout"
+    fail_msg: >-
+      {{ inventory_hostname }} booted without cgroup_memory=1. Check that {{ cmdline }} is the file this
+      Pi boots from (older images use /boot/cmdline.txt: set `cmdline` in the inventory).
+    quiet: true
 
 - name: Already joined?
   tags: [join]
