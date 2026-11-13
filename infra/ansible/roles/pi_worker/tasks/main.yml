@@ -25,10 +25,11 @@
 - name: Reboot to apply the cgroup flags
   when: "'cgroup_memory=1' not in proc_cmdline.stdout"
   block:
-    # Fire-and-forget reboot + wait for SSH. (The reboot module's boot-id check can time out over
-    # a reused SSH connection even though the Pi is back.)
+    # Fire-and-forget reboot + wait for SSH. Not the reboot module: on newer Raspberry Pi OS, systemd
+    # refuses a reboot while other users are logged in (e.g. your own SSH session), and the module
+    # then waits 10 min for a reboot that never happens. `-i` ignores inhibitors and logged-in users.
     - name: Reboot
-      ansible.builtin.shell: sleep 2 && systemctl reboot
+      ansible.builtin.shell: sleep 2 && systemctl reboot -i
       async: 30
       poll: 0
       changed_when: true
