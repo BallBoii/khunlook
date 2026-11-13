@@ -75,7 +75,7 @@ pods on whichever Pis are alive.
 
 ### Ansible (`infra/ansible/`)
 
-Run from the Mac (`pip install ansible-core` + `kubernetes.core` collection). One entry point:
+Run from the Mac (`brew install ansible`; no extra collections). One entry point:
 
 ```
 ansible-playbook site.yml --ask-vault-pass
@@ -86,12 +86,12 @@ ansible-playbook site.yml --ask-vault-pass
 | `common` | all | swap off, `overlay`/`br_netfilter`, sysctls, **containerd only** (SystemdCgroup), pkgs.k8s.io repo, kubelet/kubeadm/kubectl pinned to `kube_minor`, held |
 | `pi_worker` | workers | arm64 assert, hostname, cgroup cmdline + reboot, `kubeadm join` (token delegated to master); idempotent via `/etc/kubernetes/kubelet.conf` |
 | `master` | master | `kubeadm init` with a config file (pod CIDR `10.244.0.0/16`, `node-monitor-grace-period=20s` on controller-manager), kubeconfig for the SSH user, fetch `admin.conf` to the Mac (`infra/ansible/artifacts/kubeconfig`, git-ignored), install **Flannel** (pinned manifest) |
-| `argocd` | master | install Helm, install Argo CD Helm chart (pinned) with `global.nodeSelector`→master + control-plane toleration, Dex/notifications off, `argocd-server` NodePort 30443, reconciliation `timeout.reconciliation=60s`; create repo Secret (deploy key from vault); create `khunlook` namespace + `openrouter` Secret (from vault); apply the root `Application` |
+| `argocd` | master | install Helm, install Argo CD Helm chart 10.17.2 (pinned, via `helm`/`kubectl` CLIs — Ubuntu's python3-kubernetes is too old for kubernetes.core) with `global.nodeSelector`→master + control-plane toleration, Dex/notifications off, `argocd-server` NodePort 30443 (HTTP NodePort 30081: chart default 30080 collides with the app), reconciliation `timeout.reconciliation=60s`; create repo Secret (deploy key from vault); create `khunlook` namespace + `openrouter` Secret (from vault); apply the root `Application` |
 
 Changes to existing work: Docker and docker-buildx are **removed** from the Pis (saves RAM; images are
 built in CI). Inventory grows to 5 Pis + the VM. Shared prep moves from `pi_worker` into `common`.
 
-Secrets live in `infra/ansible/group_vars/all/vault.yml` (Ansible Vault, encrypted, committed) with a
+Secrets live in `infra/ansible/group_vars/all/vault.yml` (Ansible Vault, encrypted, **git-ignored** so each operator brings their own) with a
 `vault.example.yml` template: `openrouter_api_key`, `argocd_repo_ssh_key`, optional `ghcr_pull_token`.
 
 ### Container images (Docker)
@@ -157,7 +157,7 @@ cached images (≈ 10–60 s on a Pi 3 B+ for Python services). Requests may fai
 
 ## Calls made by the designer (check these)
 
-- kubeadm (not k3s), Flannel CNI, Kubernetes v1.34.
+- kubeadm (not k3s), Flannel v0.28.10 CNI, Kubernetes v1.36 (v1.34 is end-of-life by Nov 2026).
 - GHCR as registry, packages made **public** so Pis need no pull secret (optional `ghcr_pull_token` path kept).
 - arm64-only images; Docker removed from the Pis.
 - Argo CD installed via Helm, pinned to the master, UI on NodePort 30443, 60 s reconciliation.
