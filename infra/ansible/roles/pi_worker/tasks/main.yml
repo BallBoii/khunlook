@@ -1,4 +1,6 @@
 # Runs after the common role. Turns on memory cgroups (off by default on Raspberry Pi OS) and joins.
+# Tasks that need the master are tagged `join`: prepare Pis before the master exists with
+#   ansible-playbook site.yml --limit workers --skip-tags join
 
 - name: Require 64-bit OS (arm64)
   ansible.builtin.assert:
@@ -18,11 +20,13 @@
   when: cgroups.changed
 
 - name: Already joined?
+  tags: [join]
   ansible.builtin.stat:
     path: /etc/kubernetes/kubelet.conf
   register: joined
 
 - name: Create a join command on the master
+  tags: [join]
   ansible.builtin.command: kubeadm token create --ttl 30m --print-join-command
   delegate_to: "{{ groups['master'][0] }}"
   register: join_cmd
@@ -30,11 +34,13 @@
   when: not joined.stat.exists
 
 - name: Join the cluster
+  tags: [join]
   ansible.builtin.command: "{{ join_cmd.stdout }} --node-name {{ inventory_hostname }}"
   when: not joined.stat.exists
   changed_when: true
 
 - name: Wait until this node is Ready
+  tags: [join]
   ansible.builtin.command: >
     kubectl --kubeconfig /etc/kubernetes/admin.conf
     wait --for=condition=Ready node/{{ inventory_hostname }} --timeout=300s

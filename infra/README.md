@@ -92,6 +92,21 @@ ansible all -m ping          # every host must answer "pong"
 ansible all -b -m command -a 'true'   # and passwordless sudo must work
 ```
 
+### Preparing the Pis before the master exists (optional)
+
+The Pis can be prepared without the master: Ansible does everything except joining.
+
+```bash
+cd infra/ansible
+ansible workers -m ping                                         # the 5 Pis answer "pong"
+ansible-playbook site.yml --limit workers --skip-tags join      # no vault password needed
+```
+
+This sets the hostname, turns swap off, enables memory cgroups (**each Pi reboots once**), and
+installs containerd and kubelet/kubeadm/kubectl v1.36. The kubelet restarts in a loop until the Pi
+joins; that is normal. Once the master VM is up, `make cluster` (step 7) skips everything already done
+and only joins the Pis.
+
 ## 5. GitHub: repository, registry and CI settings
 
 Run these steps once per repository (a fork needs them too).
