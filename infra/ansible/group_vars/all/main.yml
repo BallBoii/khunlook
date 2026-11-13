@@ -1,0 +1,21 @@
+# Cluster-wide settings. Secrets live in vault.yml next to this file (see ../../vault.example.yml).
+
+kube_minor: v1.36                      # pkgs.k8s.io repo; every node gets the same kubelet/kubeadm/kubectl
+pod_cidr: 10.244.0.0/16                # must match Flannel's default net-conf
+flannel_version: v0.28.10
+helm_version: v3.22.1
+argocd_chart_version: 10.17.2          # Argo CD v3.6.1
+argocd_namespace: argocd
+
+# Failover speed: a pulled Pi is marked NotReady after this long (default 50s), and the app's
+# pods leave it 20 s later (tolerationSeconds in deploy/k8s). Kubelets report every 5 s.
+node_monitor_grace_period: 20s
+node_status_update_frequency: 5s
+
+# What Argo CD deploys.
+app_namespace: khunlook
+app_repo_url: git@github.com:BallBoii/khunlook.git
+app_repo_revision: main
+
+# Where the cluster's admin kubeconfig is copied on your Mac (git-ignored).
+kubeconfig_local: "{{ playbook_dir }}/artifacts/kubeconfig"

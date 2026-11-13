@@ -1,0 +1,65 @@
+# kubeadm control plane + Flannel on the master VM. App pods never land here: kubeadm keeps the
+# node-role.kubernetes.io/control-plane:NoSchedule taint; only Argo CD tolerates it.
+
+- name: Already initialised?
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: admin_conf
+
+- name: Kubeadm version
+  ansible.builtin.command: kubeadm version -o short
+  register: kubeadm_version
+  changed_when: false
+
+- name: /etc/kubernetes directory
+  ansible.builtin.file:
+    path: /etc/kubernetes
+    state: directory
+    mode: "0755"
+
+- name: Kubeadm config
+  ansible.builtin.template:
+    src: kubeadm-config.yaml.j2
+    dest: /etc/kubernetes/kubeadm-config.yaml
+    mode: "0600"
+
+- name: Kubeadm init
+  ansible.builtin.command: kubeadm init --config /etc/kubernetes/kubeadm-config.yaml
+  when: not admin_conf.stat.exists
+  changed_when: true
+
+- name: Kubeconfig for {{ ansible_user }}
+  block:
+    - name: User ~/.kube directory
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user }}/.kube"
+        state: directory
+        owner: "{{ ansible_user }}"
+        mode: "0700"
+
+    - name: User ~/.kube/config
+      ansible.builtin.copy:
+        src: /etc/kubernetes/admin.conf
+        dest: "/home/{{ ansible_user }}/.kube/config"
+        remote_src: true
+        owner: "{{ ansible_user }}"
+        mode: "0600"
+
+- name: Copy the admin kubeconfig to this Mac ({{ kubeconfig_local }})
+  ansible.builtin.fetch:
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ kubeconfig_local }}"
+    flat: true
+
+- name: Install Flannel {{ flannel_version }}
+  ansible.builtin.command: >
+    kubectl --kubeconfig /etc/kubernetes/admin.conf apply -f
+    https://github.com/flannel-io/flannel/releases/download/{{ flannel_version }}/kube-flannel.yml
+  register: flannel
+  changed_when: "' created' in flannel.stdout or ' configured' in flannel.stdout"
+
+- name: Wait until the master is Ready
+  ansible.builtin.command: >
+    kubectl --kubeconfig /etc/kubernetes/admin.conf
+    wait --for=condition=Ready node/{{ inventory_hostname }} --timeout=300s
+  changed_when: false

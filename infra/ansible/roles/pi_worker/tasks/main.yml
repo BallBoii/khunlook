@@ -1,78 +1,28 @@
-- name: Require arm64
+# Runs after the common role. Turns on memory cgroups (off by default on Raspberry Pi OS) and joins.
+
+- name: Require 64-bit OS (arm64)
   ansible.builtin.assert:
     that: ansible_architecture == 'aarch64'
+    fail_msg: "{{ inventory_hostname }} runs {{ ansible_architecture }}; reflash with a 64-bit image."
 
-- name: Set hostname
-  ansible.builtin.hostname:
-    name: "{{ inventory_hostname }}"
-
-- name: Enable memory cgroups on kernel cmdline
+- name: Enable memory cgroups on the kernel command line
   ansible.builtin.replace:
     path: "{{ cmdline }}"
     regexp: '^(?!.*cgroup_memory=1)(.*?)\s*$'
     replace: '\1 cgroup_enable=cpuset cgroup_memory=1 cgroup_enable=memory'
   register: cgroups
 
-- name: Reboot if cmdline changed
+- name: Reboot if the command line changed
   ansible.builtin.reboot:
+    reboot_timeout: 600
   when: cgroups.changed
-
-- name: Disable swap
-  ansible.builtin.shell: |
-    swapoff -a
-    systemctl disable --now dphys-swapfile 2>/dev/null || true
-    sed -i '/\sswap\s/s/^/#/' /etc/fstab
-  when: ansible_swaptotal_mb > 0
-  changed_when: true
-
-- name: Kernel modules and sysctls
-  ansible.builtin.shell: |
-    printf 'overlay\nbr_netfilter\n' > /etc/modules-load.d/k8s.conf
-    modprobe overlay && modprobe br_netfilter
-    printf 'net.bridge.bridge-nf-call-iptables=1\nnet.ipv4.ip_forward=1\n' > /etc/sysctl.d/99-k8s.conf
-    sysctl --system
-  args:
-    creates: /etc/sysctl.d/99-k8s.conf
-
-- name: Kubernetes apt repo
-  ansible.builtin.deb822_repository:
-    name: kubernetes
-    types: deb
-    uris: "https://pkgs.k8s.io/core:/stable:/{{ kube_minor }}/deb/"
-    suites: /
-    signed_by: "https://pkgs.k8s.io/core:/stable:/{{ kube_minor }}/deb/Release.key"
-
-- name: Install Docker (with buildx), containerd, kubelet, kubeadm
-  ansible.builtin.apt:
-    name: [docker.io, docker-buildx, containerd, kubelet, kubeadm, conntrack, socat, python3-debian]
-    update_cache: true
-
-- name: Check containerd uses systemd cgroups
-  ansible.builtin.command: grep -q 'SystemdCgroup = true' /etc/containerd/config.toml
-  register: containerd_cfg
-  failed_when: false
-  changed_when: false
-
-- name: Configure containerd for kubelet
-  ansible.builtin.shell: >
-    containerd config default | sed 's/SystemdCgroup = false/SystemdCgroup = true/'
-    > /etc/containerd/config.toml
-  when: containerd_cfg.rc != 0
-  changed_when: true
-  notify: Restart containerd
-
-- name: Let the SSH user run docker
-  ansible.builtin.user:
-    name: "{{ ansible_user }}"
-    groups: docker
-    append: true
 
 - name: Already joined?
   ansible.builtin.stat:
     path: /etc/kubernetes/kubelet.conf
   register: joined
 
-- name: Create join command on the master
+- name: Create a join command on the master
   ansible.builtin.command: kubeadm token create --ttl 30m --print-join-command
   delegate_to: "{{ groups['master'][0] }}"
   register: join_cmd
@@ -83,3 +33,10 @@
   ansible.builtin.command: "{{ join_cmd.stdout }} --node-name {{ inventory_hostname }}"
   when: not joined.stat.exists
   changed_when: true
+
+- name: Wait until this node is Ready
+  ansible.builtin.command: >
+    kubectl --kubeconfig /etc/kubernetes/admin.conf
+    wait --for=condition=Ready node/{{ inventory_hostname }} --timeout=300s
+  delegate_to: "{{ groups['master'][0] }}"
+  changed_when: false

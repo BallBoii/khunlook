@@ -1,0 +1,88 @@
+# Argo CD on the master + everything it needs to deploy KhunLook from the private GitHub repo.
+# Uses the kubectl/helm CLIs on the master (admin.conf), so no Python Kubernetes client is needed.
+# Secrets come from group_vars/all/vault.yml and are never written to Git or to disk.
+
+- name: Installed Helm version
+  ansible.builtin.command: helm version --short
+  register: helm_installed
+  failed_when: false
+  changed_when: false
+
+- name: Install Helm {{ helm_version }}
+  when: helm_installed.rc != 0 or helm_version not in helm_installed.stdout
+  vars:
+    helm_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+  block:
+    - name: Download Helm
+      ansible.builtin.unarchive:
+        src: "https://get.helm.sh/helm-{{ helm_version }}-linux-{{ helm_arch }}.tar.gz"
+        dest: /tmp
+        remote_src: true
+
+    - name: Put helm on PATH
+      ansible.builtin.copy:
+        src: "/tmp/linux-{{ helm_arch }}/helm"
+        dest: /usr/local/bin/helm
+        remote_src: true
+        mode: "0755"
+
+- name: Cluster objects
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  block:
+    - name: Argo CD Helm values
+      ansible.builtin.template:
+        src: values.yaml.j2
+        dest: /etc/kubernetes/argocd-values.yaml
+        mode: "0600"
+      register: argocd_values
+
+    - name: Deployed Argo CD chart version
+      ansible.builtin.command: helm list -n {{ argocd_namespace }} -f '^argocd$' -o json
+      register: argocd_release
+      changed_when: false
+
+    - name: Install / upgrade Argo CD {{ argocd_chart_version }}
+      ansible.builtin.command: >
+        helm upgrade --install argocd argo-cd
+        --repo https://argoproj.github.io/argo-helm
+        --version {{ argocd_chart_version }}
+        --namespace {{ argocd_namespace }} --create-namespace
+        --values /etc/kubernetes/argocd-values.yaml
+        --wait --timeout 10m
+      when: >-
+        argocd_values.changed or
+        (argocd_release.stdout | from_json | map(attribute='chart') | list) != ['argo-cd-' ~ argocd_chart_version]
+      changed_when: true
+
+    - name: App namespace {{ app_namespace }}
+      ansible.builtin.shell: >
+        set -o pipefail &&
+        kubectl create namespace {{ app_namespace }} --dry-run=client -o yaml | kubectl apply -f -
+      args:
+        executable: /bin/bash
+      register: ns
+      changed_when: "'unchanged' not in ns.stdout"
+
+    - name: Secrets (OpenRouter key, repo deploy key, optional GHCR pull secret)
+      ansible.builtin.command: kubectl apply -f -
+      args:
+        stdin: "{{ lookup('ansible.builtin.template', 'secrets.yaml.j2') }}"
+      register: secrets
+      changed_when: "secrets.stdout_lines | reject('search', 'unchanged') | list | length > 0"
+      no_log: true
+
+    - name: The KhunLook Application (Argo CD syncs deploy/k8s from here on)
+      ansible.builtin.command: kubectl apply -f -
+      args:
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../deploy/argocd/khunlook-app.yaml') }}"
+      register: app
+      changed_when: "'unchanged' not in app.stdout"
+
+- name: Where to look
+  ansible.builtin.debug:
+    msg:
+      - "App:      http://{{ ansible_host }}:30080/?demo"
+      - "Argo CD:  https://{{ ansible_host }}:30443  (user: admin)"
+      - "Password: kubectl --kubeconfig {{ kubeconfig_local }} -n {{ argocd_namespace }}
+         get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"

@@ -1,10 +1,8 @@
 # PRODUCTION: frontend on the Pi cluster.
-#   Deploy with `make deploy-web` (applies this file and api-gateway.yaml together: nginx looks
-#   up the api-gateway Service name when it starts).
-#   Before deploying, set the image tag below to the one pushed with `make push-frontend`.
+#   Deployed by Argo CD from deploy/k8s (kustomization.yaml sets the image tag).
 #
 # nginx serving the chat page and forwarding /api/* to api-gateway. The only Service reachable
-# from outside the cluster. Open it through a MASTER VM's IP: http://<master-ip>:30080.
+# from outside the cluster. Open it through the master VM's IP: http://<master-ip>:30080.
 # A NodePort answers on every node, so that address survives any Pi being pulled; a Pi's own
 # IP does not. Same layout as vector-db.yaml.
 apiVersion: apps/v1
@@ -20,8 +18,6 @@ spec:
     metadata:
       labels: {app: frontend}
     spec:
-      nodeSelector:
-        kubernetes.io/arch: arm64          # Pi workers only (masters are amd64 VMs)
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -35,7 +31,7 @@ spec:
         - {key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 20}
       containers:
         - name: frontend
-          image: CHANGE_ME_REGISTRY/frontend:1.0.0      # pinned tag from `make push-frontend`
+          image: ghcr.io/ballboii/khunlook-frontend:latest   # tag set by deploy/k8s/kustomization.yaml
           imagePullPolicy: IfNotPresent
           ports:
             - {name: http, containerPort: 8080}

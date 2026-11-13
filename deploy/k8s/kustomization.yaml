@@ -1,0 +1,29 @@
+# Root of everything Argo CD deploys (Application: deploy/argocd/khunlook-app.yaml).
+# Render locally with `kubectl kustomize deploy/k8s`.
+#
+# The `images:` block is the ONLY place image tags live. CI (.github/workflows/build-deploy.yml)
+# rewrites a service's newTag to the commit SHA after pushing its image; Argo CD then rolls it out.
+# Kustomize applies each tag to the service Deployment and to the prepull DaemonSet alike.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: khunlook
+labels:
+  - pairs: {app.kubernetes.io/part-of: khunlook}
+resources:
+  - frontend/frontend.yaml
+  - api-gateway/api-gateway.yaml
+  - rag/rag.yaml
+  - vector-db/vector-db.yaml
+  - model-service/model-service.yaml
+  - prepull/prepull.yaml
+images:
+  - name: ghcr.io/ballboii/khunlook-frontend
+    newTag: latest
+  - name: ghcr.io/ballboii/khunlook-api-gateway
+    newTag: latest
+  - name: ghcr.io/ballboii/khunlook-rag
+    newTag: latest
+  - name: ghcr.io/ballboii/khunlook-vector-db
+    newTag: latest
+  - name: ghcr.io/ballboii/khunlook-model-service
+    newTag: latest

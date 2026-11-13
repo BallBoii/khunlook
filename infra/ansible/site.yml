@@ -1,0 +1,39 @@
+# One command, fresh machines -> cluster + Argo CD syncing the app from GitHub:
+#   ansible-playbook site.yml --ask-vault-pass
+# Safe to re-run: init/join are skipped on nodes that already have them, Helm upgrades in place.
+
+- name: Preflight
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  tasks:
+    - name: Secrets are present in group_vars/all/vault.yml
+      ansible.builtin.assert:
+        that:
+          - vault_openrouter_api_key is defined
+          - vault_openrouter_api_key | length > 0
+          - "'CHANGE_ME' not in vault_openrouter_api_key"
+          - vault_argocd_repo_ssh_key is defined
+          - "'PRIVATE KEY' in vault_argocd_repo_ssh_key"
+          - "'CHANGE_ME' not in vault_argocd_repo_ssh_key"
+        fail_msg: >-
+          Fill in group_vars/all/vault.yml from vault.example.yml (OpenRouter key + Argo CD deploy key)
+          and run with --ask-vault-pass.
+        quiet: true
+
+- name: Prepare every node (containerd, kubelet, kubeadm)
+  hosts: cluster
+  roles: [common]
+
+- name: Control plane on the master VM
+  hosts: master
+  roles: [master]
+
+- name: Join the Raspberry Pi workers
+  hosts: workers
+  roles: [pi_worker]
+
+- name: Argo CD + the KhunLook application
+  hosts: master
+  roles: [argocd]

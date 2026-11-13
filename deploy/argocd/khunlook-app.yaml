@@ -1,0 +1,28 @@
+# The Argo CD Application: keep the cluster equal to deploy/k8s on main.
+# Applied once by Ansible (roles/argocd). Afterwards every change to deploy/k8s on main (including
+# CI's image-tag bumps) is synced automatically within ~1 minute.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: khunlook
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io   # deleting the Application removes the app too
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:BallBoii/khunlook.git
+    targetRevision: main
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: khunlook
+  syncPolicy:
+    automated:
+      prune: true        # delete what was removed from Git
+      selfHeal: true     # undo manual kubectl edits / deletions
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff: {duration: 10s, factor: 2, maxDuration: 3m}

@@ -5,3 +5,6 @@ __pycache__/
 .env
 ingest/cache/
 courses_md.zip
+infra/ansible/artifacts/
+infra/ansible/group_vars/all/vault.yml
+argocd-deploy-key*
