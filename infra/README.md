@@ -152,6 +152,11 @@ $EDITOR group_vars/all/vault.yml     # OpenRouter key + the PRIVATE deploy key (
 ansible-vault encrypt group_vars/all/vault.yml
 ```
 
+If the master and the Pis need **different sudo passwords**, set `vault_master_become_password` and
+`vault_workers_become_password` in the vault (leave `""` for passwordless sudo). Don't pass
+`--ask-become-pass`: it sends one password to every host. To add them to an existing vault:
+`ansible-vault edit group_vars/all/vault.yml`.
+
 `group_vars/all/vault.yml` is git-ignored. Nothing secret is ever committed. If a value is missing, the
 playbook stops at the very first task.
 

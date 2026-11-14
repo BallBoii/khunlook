@@ -17,3 +17,8 @@ vault_argocd_repo_ssh_key: |
 # Optional: only if the GHCR images stay private. A classic PAT with read:packages.
 vault_ghcr_pull_user: ""
 vault_ghcr_pull_token: ""
+
+# sudo passwords (the master and the Pis may differ). "" = passwordless sudo.
+# Used instead of --ask-become-pass, which can only send one password to every host.
+vault_master_become_password: ""
+vault_workers_become_password: ""

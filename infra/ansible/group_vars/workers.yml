@@ -1,0 +1,3 @@
+# sudo password for the Pis' user, from the vault (group_vars/all/vault.yml).
+# Leave it "" there if the user has passwordless sudo (the Raspberry Pi OS default).
+ansible_become_password: "{{ vault_workers_become_password | default('') }}"
