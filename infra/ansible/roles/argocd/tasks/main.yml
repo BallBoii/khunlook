@@ -42,6 +42,32 @@
       register: argocd_release
       changed_when: false
 
+    # An interrupted run (Ctrl-C, timeout) leaves the release locked in pending-*, and every later
+    # `helm upgrade` fails with "another operation is in progress". Clear it: stop any helm left
+    # over from that run, then undo the half-finished operation.
+    - name: Clear a release stuck in pending-*
+      vars:
+        argocd_status: "{{ (argocd_release.stdout | from_json | map(attribute='status') | list + ['none']) | first }}"
+      when: argocd_status is match('pending-')
+      block:
+        - name: Stop a helm process left over from an earlier run
+          ansible.builtin.command: pkill -f 'helm upgrade --install argocd'
+          register: pkill
+          changed_when: pkill.rc == 0
+          failed_when: pkill.rc > 1
+
+        - name: Undo the stuck operation ({{ argocd_status }})
+          ansible.builtin.command: >-
+            {{ 'helm uninstall argocd --wait --timeout 5m' if argocd_status == 'pending-install'
+               else 'helm rollback argocd --wait --timeout 5m' }}
+            -n {{ argocd_namespace }}
+          changed_when: true
+
+        - name: Release state after clean-up
+          ansible.builtin.command: helm list -n {{ argocd_namespace }} -f '^argocd$' -a -o json
+          register: argocd_release
+          changed_when: false
+
     # A failed or interrupted install must be retried, not treated as done.
     - name: Is the wanted chart version deployed?
       ansible.builtin.set_fact:
@@ -57,7 +83,7 @@
         --version {{ argocd_chart_version }}
         --namespace {{ argocd_namespace }} --create-namespace
         --values /etc/kubernetes/argocd-values.yaml
-        --wait --timeout 10m
+        --wait --timeout 5m
       when: argocd_values.changed or not (argocd_up_to_date | bool)
       changed_when: true
 
