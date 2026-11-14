@@ -6,6 +6,25 @@
     path: /etc/kubernetes/admin.conf
   register: admin_conf
 
+# kubeadm bakes the IP into the API server certificate and every kubeconfig. If the VM's IP changed
+# since `kubeadm init` (e.g. new DHCP lease), nothing can reach the API: fail now with the fix.
+- name: Endpoint the existing cluster was created with
+  ansible.builtin.command: grep -oP 'server:\s*https://\K[^:]+' /etc/kubernetes/admin.conf
+  register: cluster_ip
+  changed_when: false
+  when: admin_conf.stat.exists
+
+- name: Cluster IP matches the inventory
+  ansible.builtin.assert:
+    that: cluster_ip.stdout == ansible_host
+    fail_msg: >-
+      The cluster was initialised for {{ cluster_ip.stdout }}, but this VM is now {{ ansible_host }}.
+      Give the VM a fixed IP (DHCP reservation), then reset it and re-run the playbook:
+      ssh {{ ansible_user }}@{{ ansible_host }} 'sudo kubeadm reset -f && sudo rm -rf /etc/cni/net.d
+      && sudo ip link delete cni0; sudo ip link delete flannel.1; true'
+    quiet: true
+  when: admin_conf.stat.exists
+
 - name: Kubeadm version
   ansible.builtin.command: kubeadm version -o short
   register: kubeadm_version
