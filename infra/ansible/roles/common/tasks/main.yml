@@ -77,6 +77,15 @@
   changed_when: true
   notify: Restart containerd
 
+# Debian's containerd looks for CNI plugins in /usr/lib/cni, but kubernetes-cni and Flannel install
+# them in /opt/cni/bin. Without this the node stays NotReady: "cni plugin not initialized".
+- name: Containerd finds the CNI plugins in /opt/cni/bin
+  ansible.builtin.replace:
+    path: /etc/containerd/config.toml
+    regexp: '/usr/lib/cni'
+    replace: '/opt/cni/bin'
+  notify: Restart containerd
+
 - name: Containerd running
   ansible.builtin.systemd_service:
     name: containerd
