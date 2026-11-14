@@ -99,7 +99,7 @@ The Pis can be prepared without the master: Ansible does everything except joini
 ```bash
 cd infra/ansible
 ansible workers -m ping                                         # the 5 Pis answer "pong"
-ansible-playbook site.yml --limit workers --skip-tags join      # no vault password needed
+ansible-playbook site.yml --limit workers --skip-tags join      # add --ask-vault-pass once vault.yml exists
 ```
 
 This sets the hostname, turns swap off, enables memory cgroups (**each Pi reboots once**), and
