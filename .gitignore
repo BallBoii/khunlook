@@ -6,5 +6,7 @@ __pycache__/
 ingest/cache/
 courses_md.zip
 infra/ansible/artifacts/
+infra/ansible/vault.yml
 infra/ansible/group_vars/all/vault.yml
 argocd-deploy-key*
+.DS_Store
