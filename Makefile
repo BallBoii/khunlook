@@ -20,7 +20,7 @@ COMPOSE        = docker compose -f deploy/docker/compose.yaml
 
 .PHONY: setup ingest estimate eval validate-index test build-vector-db push-vector-db run-vector-db \
         build-api-gateway push-api-gateway build-frontend push-frontend test-frontend build-rag push-rag build-model-service push-model-service run-model-service dev-up dev-down \
-        cluster render argocd-password
+        cluster cluster-reset render argocd-password
 
 setup:            ## install dev deps
 	$(PY) -m pip install -r ingest/requirements.txt -r services/vector-db/requirements.txt -r services/api-gateway/requirements.txt -r services/model/requirements.txt -r services/rag/requirements.txt
@@ -98,6 +98,10 @@ KUBECONFIG_LOCAL ?= infra/ansible/artifacts/kubeconfig
 
 cluster:             ## build/refresh the whole cluster + Argo CD (needs ansible-core, vault password)
 	cd infra/ansible && ansible-playbook site.yml --ask-vault-pass
+
+cluster-reset:       ## WIPE the cluster on the master and every Pi (then `make cluster` rebuilds it)
+	@read -p "Delete the Kubernetes cluster on ALL nodes? [y/N] " ok && [ "$$ok" = y ]
+	cd infra/ansible && ansible all --ask-vault-pass -m shell -a 'kubeadm reset -f; rm -rf /etc/cni/net.d; ip link delete cni0; ip link delete flannel.1; true'
 
 render:              ## print exactly what Argo CD will apply
 	kubectl kustomize deploy/k8s
