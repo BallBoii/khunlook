@@ -24,6 +24,8 @@ running on Kubernetes. After that, every `git push` to `main` is deployed automa
 | Argo CD app | [`../deploy/argocd/khunlook-app.yaml`](../deploy/argocd/khunlook-app.yaml) | Keeps the cluster equal to `deploy/k8s` on `main` (auto-sync, prune, self-heal) |
 | CI | [`../.github/workflows/build-deploy.yml`](../.github/workflows/build-deploy.yml) | Tests, builds changed services, pushes to GHCR, bumps tags |
 
+More diagrams (what runs on each node, request path, failover timeline): [docs/infrastructure.md](../docs/infrastructure.md).
+
 **Time needed:** about 1 hour the first time, mostly waiting for apt and image pulls on the Pis.
 
 ---

@@ -37,6 +37,9 @@ replacements are up, requests that reach the dead pods may fail; after that, eve
 
 ## Infrastructure
 
+Diagrams of the network, node layout, request path, GitOps flow and failover:
+**[docs/infrastructure.md](docs/infrastructure.md)**.
+
 | Layer | Tooling |
 |-------|---------|
 | Cluster | 1 master: an Ubuntu 24.04 arm64 VM in UTM on a Mac (bridged to the LAN). 5 workers: Raspberry Pi 3 B+. Kubernetes v1.36 (kubeadm), Flannel network |
