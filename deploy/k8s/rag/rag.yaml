@@ -13,8 +13,6 @@ spec:
     metadata:
       labels: {app: rag}
     spec:
-      nodeSelector:
-        kubernetes.io/arch: arm64          # Pi workers only (masters are amd64 VMs)
       affinity:
         podAntiAffinity:                   # spread replicas over Pis, but still schedule if Pis are down
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -28,7 +26,7 @@ spec:
         - {key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 20}
       containers:
         - name: rag
-          image: CHANGE_ME_REGISTRY/rag:1.0.0
+          image: ghcr.io/ballboii/khunlook-rag:latest   # tag set by deploy/k8s/kustomization.yaml
           imagePullPolicy: IfNotPresent
           ports:
             - {name: http, containerPort: 8080}
@@ -36,7 +34,7 @@ spec:
             - name: POD_NAME
               valueFrom: {fieldRef: {fieldPath: metadata.name}}
             - {name: VECTOR_DB_URL, value: "http://vector-db:8080"}
-            - {name: MODEL_SERVICE_URL, value: "http://model-service:8080"}   # CHANGE_ME if its Service differs
+            - {name: MODEL_SERVICE_URL, value: "http://model-service:8080"}
             - {name: TOP_K, value: "5"}
             - {name: MIN_SCORE, value: "0.0"}
             - {name: MAX_CONTEXT_CHARS, value: "6000"}

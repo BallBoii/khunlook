@@ -1,0 +1,84 @@
+# kubeadm control plane + Flannel on the master VM. App pods never land here: kubeadm keeps the
+# node-role.kubernetes.io/control-plane:NoSchedule taint; only Argo CD tolerates it.
+
+- name: Already initialised?
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: admin_conf
+
+# kubeadm bakes the IP into the API server certificate and every kubeconfig. If the VM's IP changed
+# since `kubeadm init` (e.g. new DHCP lease), nothing can reach the API: fail now with the fix.
+- name: Endpoint the existing cluster was created with
+  ansible.builtin.command: grep -oP 'server:\s*https://\K[^:]+' /etc/kubernetes/admin.conf
+  register: cluster_ip
+  changed_when: false
+  when: admin_conf.stat.exists
+
+- name: Cluster IP matches the inventory
+  ansible.builtin.assert:
+    that: cluster_ip.stdout == ansible_host
+    fail_msg: >-
+      The cluster was initialised for {{ cluster_ip.stdout }}, but this VM is now {{ ansible_host }}.
+      Easiest fix: give the VM {{ cluster_ip.stdout }} back (DHCP reservation for its MAC), reboot it,
+      and set ansible_host={{ cluster_ip.stdout }} in inventory.ini. Otherwise reset the master AND every
+      joined Pi (`sudo kubeadm reset -f && sudo rm -rf /etc/cni/net.d` on each), then re-run.
+    quiet: true
+  when: admin_conf.stat.exists
+
+- name: Kubeadm version
+  ansible.builtin.command: kubeadm version -o short
+  register: kubeadm_version
+  changed_when: false
+
+- name: /etc/kubernetes directory
+  ansible.builtin.file:
+    path: /etc/kubernetes
+    state: directory
+    mode: "0755"
+
+- name: Kubeadm config
+  ansible.builtin.template:
+    src: kubeadm-config.yaml.j2
+    dest: /etc/kubernetes/kubeadm-config.yaml
+    mode: "0600"
+
+- name: Kubeadm init
+  ansible.builtin.command: kubeadm init --config /etc/kubernetes/kubeadm-config.yaml
+  when: not admin_conf.stat.exists
+  changed_when: true
+
+- name: Kubeconfig for {{ ansible_user }}
+  block:
+    - name: User ~/.kube directory
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user }}/.kube"
+        state: directory
+        owner: "{{ ansible_user }}"
+        mode: "0700"
+
+    - name: User ~/.kube/config
+      ansible.builtin.copy:
+        src: /etc/kubernetes/admin.conf
+        dest: "/home/{{ ansible_user }}/.kube/config"
+        remote_src: true
+        owner: "{{ ansible_user }}"
+        mode: "0600"
+
+- name: Copy the admin kubeconfig to this Mac ({{ kubeconfig_local }})
+  ansible.builtin.fetch:
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ kubeconfig_local }}"
+    flat: true
+
+- name: Install Flannel {{ flannel_version }}
+  ansible.builtin.command: >
+    kubectl --kubeconfig /etc/kubernetes/admin.conf apply -f
+    https://github.com/flannel-io/flannel/releases/download/{{ flannel_version }}/kube-flannel.yml
+  register: flannel
+  changed_when: "' created' in flannel.stdout or ' configured' in flannel.stdout"
+
+- name: Wait until the master is Ready
+  ansible.builtin.command: >
+    kubectl --kubeconfig /etc/kubernetes/admin.conf
+    wait --for=condition=Ready node/{{ inventory_hostname }} --timeout=300s
+  changed_when: false

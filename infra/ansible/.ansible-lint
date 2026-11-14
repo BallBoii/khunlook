@@ -1,0 +1,4 @@
+# Short register names read better in these small roles.
+skip_list:
+  - var-naming[no-role-prefix]
+  - no-handler

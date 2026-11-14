@@ -13,8 +13,6 @@ spec:
     metadata:
       labels: {app: vector-db}
     spec:
-      nodeSelector:
-        kubernetes.io/arch: arm64          # Pi workers only (masters are amd64 VMs)
       affinity:
         podAntiAffinity:                   # spread replicas over Pis, but still schedule if Pis are down
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -28,7 +26,7 @@ spec:
         - {key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 20}
       containers:
         - name: vector-db
-          image: CHANGE_ME_REGISTRY/vector-db:1.0.0-idxCHANGE_ME   # pinned tag from `make push-vector-db`
+          image: ghcr.io/ballboii/khunlook-vector-db:latest   # tag set by deploy/k8s/kustomization.yaml
           imagePullPolicy: IfNotPresent
           ports:
             - {name: http, containerPort: 8080}

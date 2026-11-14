@@ -1,6 +1,0 @@
-# Usage: ansible-playbook workers.yml [--limit pi-worker-1]
-# Needs 64-bit Raspberry Pi OS / Ubuntu, and a running control plane with a CNI installed.
-- name: Docker + Kubernetes on Raspberry Pi workers
-  hosts: workers
-  roles:
-    - pi_worker

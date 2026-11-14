@@ -1,0 +1,53 @@
+# Keeps every current app image cached on every Pi. When a Pi is pulled, its pods are recreated on
+# Pis that already have the image, so they start in seconds instead of waiting for a ~50 MB pull
+# over the Pi 3 B+'s 100 Mbit link. Each init container just starts the image and exits; the pod
+# then idles in `pause` (~1 MiB). Kustomize keeps these tags identical to the Deployments'.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: image-prepull
+  labels: {app: image-prepull}
+spec:
+  selector:
+    matchLabels: {app: image-prepull}
+  updateStrategy:
+    rollingUpdate: {maxUnavailable: "100%"}   # new tags: pull on every Pi at once
+  template:
+    metadata:
+      labels: {app: image-prepull}
+    spec:
+      # No control-plane toleration: runs on the Pis only, like the app.
+      terminationGracePeriodSeconds: 1
+      securityContext:
+        runAsNonRoot: true
+      initContainers:
+        - name: frontend
+          image: ghcr.io/ballboii/khunlook-frontend:latest
+          command: ["true"]
+          securityContext: {runAsUser: 101, allowPrivilegeEscalation: false}
+          resources: &tiny {requests: {cpu: 1m, memory: 8Mi}, limits: {memory: 64Mi}}
+        - name: api-gateway
+          image: ghcr.io/ballboii/khunlook-api-gateway:latest
+          command: ["python", "-c", "pass"]
+          securityContext: {runAsUser: 10001, allowPrivilegeEscalation: false}
+          resources: *tiny
+        - name: rag
+          image: ghcr.io/ballboii/khunlook-rag:latest
+          command: ["python", "-c", "pass"]
+          securityContext: {runAsUser: 10001, allowPrivilegeEscalation: false}
+          resources: *tiny
+        - name: vector-db
+          image: ghcr.io/ballboii/khunlook-vector-db:latest
+          command: ["python", "-c", "pass"]
+          securityContext: {runAsUser: 10001, allowPrivilegeEscalation: false}
+          resources: *tiny
+        - name: model-service
+          image: ghcr.io/ballboii/khunlook-model-service:latest
+          command: ["python", "-c", "pass"]
+          securityContext: {runAsUser: 10001, allowPrivilegeEscalation: false}
+          resources: *tiny
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.10
+          securityContext: {runAsUser: 65535, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true}
+          resources: *tiny

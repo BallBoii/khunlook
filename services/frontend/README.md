@@ -103,15 +103,11 @@ to match the current CU course corpus; that business-logic change is outside the
 
 ## Deploy to the cluster
 
-```bash
-make push-frontend REGISTRY=<registry> VERSION=1.0.0   # arm64 + amd64 image
-# set that tag in deploy/k8s/frontend/frontend.yaml
-make deploy-web                                        # gateway + frontend together
-```
+Push to `main`: CI builds `ghcr.io/ballboii/khunlook-frontend:<sha>`, bumps the tag in
+`deploy/k8s/kustomization.yaml`, and Argo CD rolls it out (see [infra/README.md](../../infra/README.md)).
 
 Open `http://<master-VM-IP>:30080/?demo`, not a Pi's IP: a NodePort answers on every node, so
 the master's address keeps working whichever Pi is pulled.
-Bump `VERSION` for every new push (the manifest uses `imagePullPolicy: IfNotPresent`).
 
 ## Next steps
 

@@ -1,6 +1,5 @@
 # PRODUCTION: api-gateway on the Pi cluster.
-#   Deploy with `make deploy-web` (applies this file and frontend.yaml together).
-#   Before deploying, set the image tag below to the one pushed with `make push-api-gateway`.
+#   Deployed by Argo CD from deploy/k8s (kustomization.yaml sets the image tag).
 #
 # The only path from the frontend to rag-service: rate limits, timeouts, one safe retry,
 # request IDs, JSON logs and the served-by chain. Stateless (limits live in each replica's
@@ -18,8 +17,6 @@ spec:
     metadata:
       labels: {app: api-gateway}
     spec:
-      nodeSelector:
-        kubernetes.io/arch: arm64          # Pi workers only (masters are amd64 VMs)
       affinity:
         podAntiAffinity:                   # spread replicas over Pis, but still schedule if Pis are down
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -33,7 +30,7 @@ spec:
         - {key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 20}
       containers:
         - name: api-gateway
-          image: CHANGE_ME_REGISTRY/api-gateway:1.0.0   # pinned tag from `make push-api-gateway`
+          image: ghcr.io/ballboii/khunlook-api-gateway:latest   # tag set by deploy/k8s/kustomization.yaml
           imagePullPolicy: IfNotPresent
           ports:
             - {name: http, containerPort: 8080}

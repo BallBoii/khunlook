@@ -1,6 +1,5 @@
 # model-service: the only pod that talks to OpenRouter (embeddings + LLM). Stateless.
-# Create the secret once (never commit the key):
-#   kubectl create secret generic openrouter --from-literal=api-key=sk-or-...
+# The `openrouter` Secret is created by Ansible (roles/argocd) from the vault; it is never in Git.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -14,8 +13,6 @@ spec:
     metadata:
       labels: {app: model-service}
     spec:
-      nodeSelector:
-        kubernetes.io/arch: arm64          # Pi workers only
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -29,7 +26,7 @@ spec:
         - {key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 20}
       containers:
         - name: model-service
-          image: CHANGE_ME_REGISTRY/model-service:1.0.0
+          image: ghcr.io/ballboii/khunlook-model-service:latest   # tag set by deploy/k8s/kustomization.yaml
           imagePullPolicy: IfNotPresent
           ports:
             - {name: http, containerPort: 8080}

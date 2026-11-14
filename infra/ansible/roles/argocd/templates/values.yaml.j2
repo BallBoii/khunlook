@@ -1,0 +1,28 @@
+# Argo CD Helm values (chart {{ argocd_chart_version }}). Rendered by roles/argocd.
+global:
+  # Everything Argo CD runs on the master VM, so it costs the 1 GB Pis nothing and keeps
+  # syncing while Pis are pulled.
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: ""
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+
+dex:
+  enabled: false            # local admin user only
+notifications:
+  enabled: false
+
+configs:
+  cm:
+    timeout.reconciliation: 60s          # poll GitHub every minute (no webhooks into the LAN)
+    timeout.reconciliation.jitter: 10s
+  params:
+    server.insecure: false
+
+server:
+  service:
+    type: NodePort
+    nodePortHttps: 30443                 # https://<master-ip>:30443
+    nodePortHttp: 30081                  # chart default 30080 is taken by the app's frontend

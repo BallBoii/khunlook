@@ -130,15 +130,12 @@ system prompt to match that corpus; the gateway forwards the question and does n
 ## Deploy to the cluster
 
 ```bash
-make push-api-gateway REGISTRY=<registry> VERSION=1.0.0   # arm64 + amd64 image
-# set that tag in deploy/k8s/api-gateway/api-gateway.yaml
-make deploy-web                                           # gateway + frontend together
-kubectl get pods -l app=api-gateway -o wide                # 2 pods, on different Pis
-kubectl logs -l app=api-gateway                            # one JSON line per request
+# push to main: CI builds the image and bumps deploy/k8s, Argo CD rolls it out (infra/README.md)
+kubectl -n khunlook get pods -l app=api-gateway -o wide    # 2 pods, on different Pis
+kubectl -n khunlook logs -l app=api-gateway                # one JSON line per request
 ```
 
-Bump `VERSION` for every new push: the manifest uses `imagePullPolicy: IfNotPresent`, so a Pi
-that already has a tag won't download a changed image with the same tag.
+Every build gets a new tag (the commit SHA), so `imagePullPolicy: IfNotPresent` never serves a stale image.
 
 ## Next steps
 
