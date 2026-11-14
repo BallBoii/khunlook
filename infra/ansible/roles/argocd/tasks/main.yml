@@ -63,16 +63,17 @@
             -n {{ argocd_namespace }}
           changed_when: true
 
+        # Own variable: a skipped task with `register` would overwrite argocd_release.
         - name: Release state after clean-up
           ansible.builtin.command: helm list -n {{ argocd_namespace }} -f '^argocd$' -a -o json
-          register: argocd_release
+          register: argocd_release_cleaned
           changed_when: false
 
     # A failed or interrupted install must be retried, not treated as done.
     - name: Is the wanted chart version deployed?
       ansible.builtin.set_fact:
         argocd_up_to_date: >-
-          {{ argocd_release.stdout | from_json
+          {{ argocd_release_cleaned.stdout | default(argocd_release.stdout) | from_json
              | selectattr('status', 'equalto', 'deployed')
              | map(attribute='chart') | list == ['argo-cd-' ~ argocd_chart_version] }}
 
