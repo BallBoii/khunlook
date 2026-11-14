@@ -38,7 +38,8 @@ replacements are up, requests that reach the dead pods may fail; after that, eve
 ## Infrastructure
 
 Diagrams of the network, node layout, request path, GitOps flow and failover:
-**[docs/infrastructure.md](docs/infrastructure.md)**.
+**[docs/infrastructure.md](docs/infrastructure.md)**. Every IP, Service, DNS name and port:
+**[docs/network.md](docs/network.md)**.
 
 | Layer | Tooling |
 |-------|---------|

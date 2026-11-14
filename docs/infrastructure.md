@@ -1,7 +1,7 @@
 # Infrastructure diagrams
 
 How KhunLook's infrastructure fits together: the machines, what runs where, how a request travels,
-how code gets deployed, and what happens when a Pi is unplugged. Setup steps are in
+how code gets deployed, and what happens when a Pi is unplugged. Every IP, Service and port in detail: [network.md](network.md). Setup steps are in
 [infra/README.md](../infra/README.md).
 
 IPs below follow the plan in [`infra/ansible/inventory.ini`](../infra/ansible/inventory.ini)

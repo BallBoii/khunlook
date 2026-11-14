@@ -25,6 +25,7 @@ running on Kubernetes. After that, every `git push` to `main` is deployed automa
 | CI | [`../.github/workflows/build-deploy.yml`](../.github/workflows/build-deploy.yml) | Tests, builds changed services, pushes to GHCR, bumps tags |
 
 More diagrams (what runs on each node, request path, failover timeline): [docs/infrastructure.md](../docs/infrastructure.md).
+IPs, Services, DNS and ports in detail: [docs/network.md](../docs/network.md).
 
 **Time needed:** about 1 hour the first time, mostly waiting for apt and image pulls on the Pis.
 
