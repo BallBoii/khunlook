@@ -19,9 +19,9 @@
     that: cluster_ip.stdout == ansible_host
     fail_msg: >-
       The cluster was initialised for {{ cluster_ip.stdout }}, but this VM is now {{ ansible_host }}.
-      Give the VM a fixed IP (DHCP reservation), then reset it and re-run the playbook:
-      ssh {{ ansible_user }}@{{ ansible_host }} 'sudo kubeadm reset -f && sudo rm -rf /etc/cni/net.d
-      && sudo ip link delete cni0; sudo ip link delete flannel.1; true'
+      Easiest fix: give the VM {{ cluster_ip.stdout }} back (DHCP reservation for its MAC), reboot it,
+      and set ansible_host={{ cluster_ip.stdout }} in inventory.ini. Otherwise reset the master AND every
+      joined Pi (`sudo kubeadm reset -f && sudo rm -rf /etc/cni/net.d` on each), then re-run.
     quiet: true
   when: admin_conf.stat.exists
 
