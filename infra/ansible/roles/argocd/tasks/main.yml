@@ -11,7 +11,7 @@
 - name: Install Helm {{ helm_version }}
   when: helm_installed.rc != 0 or helm_version not in helm_installed.stdout
   vars:
-    helm_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+    helm_arch: "{{ 'arm64' if ansible_facts['architecture'] == 'aarch64' else 'amd64' }}"
   block:
     - name: Download Helm
       ansible.builtin.unarchive:

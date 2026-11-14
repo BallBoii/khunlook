@@ -4,8 +4,8 @@
 
 - name: Require 64-bit OS (arm64)
   ansible.builtin.assert:
-    that: ansible_architecture == 'aarch64'
-    fail_msg: "{{ inventory_hostname }} runs {{ ansible_architecture }}; reflash with a 64-bit image."
+    that: ansible_facts['architecture'] == 'aarch64'
+    fail_msg: "{{ inventory_hostname }} runs {{ ansible_facts['architecture'] }}; reflash with a 64-bit image."
 
 - name: Enable memory cgroups on the kernel command line
   # `.+?` (not `.*?`) so the empty "line" after the final newline never matches: cmdline.txt must
@@ -39,14 +39,15 @@
         delay: 45
         timeout: 600
 
+    # Own variable: a skipped task with `register` would overwrite proc_cmdline.
     - name: Flags in the running kernel after reboot
       ansible.builtin.command: cat /proc/cmdline
-      register: proc_cmdline
+      register: proc_cmdline_rebooted
       changed_when: false
 
 - name: Memory cgroups are active
   ansible.builtin.assert:
-    that: "'cgroup_memory=1' in proc_cmdline.stdout"
+    that: "'cgroup_memory=1' in (proc_cmdline_rebooted.stdout | default(proc_cmdline.stdout))"
     fail_msg: >-
       {{ inventory_hostname }} booted without cgroup_memory=1. Check that {{ cmdline }} is the file this
       Pi boots from (older images use /boot/cmdline.txt: set `cmdline` in the inventory).
