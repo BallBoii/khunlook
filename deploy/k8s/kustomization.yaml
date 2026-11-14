@@ -18,12 +18,12 @@ resources:
   - prepull/prepull.yaml
 images:
   - name: ghcr.io/ballboii/khunlook-frontend
-    newTag: latest
+    newTag: 33f4f1c4514c12c80a91cb586cf66f8a45240eb5
   - name: ghcr.io/ballboii/khunlook-api-gateway
-    newTag: latest
+    newTag: 33f4f1c4514c12c80a91cb586cf66f8a45240eb5
   - name: ghcr.io/ballboii/khunlook-rag
-    newTag: latest
+    newTag: 33f4f1c4514c12c80a91cb586cf66f8a45240eb5
   - name: ghcr.io/ballboii/khunlook-vector-db
-    newTag: latest
+    newTag: 33f4f1c4514c12c80a91cb586cf66f8a45240eb5
   - name: ghcr.io/ballboii/khunlook-model-service
-    newTag: latest
+    newTag: 33f4f1c4514c12c80a91cb586cf66f8a45240eb5
