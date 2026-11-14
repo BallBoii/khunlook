@@ -22,3 +22,5 @@ vault_ghcr_pull_token: ""
 # Used instead of --ask-become-pass, which can only send one password to every host.
 vault_master_become_password: ""
 vault_workers_become_password: ""
+# SSH login password for the Pis. "" = log in with your SSH key instead (recommended).
+vault_workers_ssh_password: ""
