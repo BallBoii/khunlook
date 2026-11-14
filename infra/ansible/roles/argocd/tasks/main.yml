@@ -38,9 +38,17 @@
       register: argocd_values
 
     - name: Deployed Argo CD chart version
-      ansible.builtin.command: helm list -n {{ argocd_namespace }} -f '^argocd$' -o json
+      ansible.builtin.command: helm list -n {{ argocd_namespace }} -f '^argocd$' -a -o json
       register: argocd_release
       changed_when: false
+
+    # A failed or interrupted install must be retried, not treated as done.
+    - name: Is the wanted chart version deployed?
+      ansible.builtin.set_fact:
+        argocd_up_to_date: >-
+          {{ argocd_release.stdout | from_json
+             | selectattr('status', 'equalto', 'deployed')
+             | map(attribute='chart') | list == ['argo-cd-' ~ argocd_chart_version] }}
 
     - name: Install / upgrade Argo CD {{ argocd_chart_version }}
       ansible.builtin.command: >
@@ -50,9 +58,7 @@
         --namespace {{ argocd_namespace }} --create-namespace
         --values /etc/kubernetes/argocd-values.yaml
         --wait --timeout 10m
-      when: >-
-        argocd_values.changed or
-        (argocd_release.stdout | from_json | map(attribute='chart') | list) != ['argo-cd-' ~ argocd_chart_version]
+      when: argocd_values.changed or not (argocd_up_to_date | bool)
       changed_when: true
 
     - name: App namespace {{ app_namespace }}
