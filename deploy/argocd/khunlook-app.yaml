@@ -11,7 +11,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:BallBoii/khunlook.git
+    repoURL: https://github.com/BallBoii/khunlook.git   # public repo: read over HTTPS, no key needed
     targetRevision: main
     path: deploy/k8s
   destination:

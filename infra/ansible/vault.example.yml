@@ -6,14 +6,6 @@
 # OpenRouter key used by model-service (https://openrouter.ai/keys).
 vault_openrouter_api_key: "sk-or-v1-CHANGE_ME"
 
-# Private half of the read-only GitHub deploy key Argo CD uses to read the private repo
-# (ssh-keygen -t ed25519 -f argocd-deploy-key -N ""; add argocd-deploy-key.pub under
-# GitHub repo -> Settings -> Deploy keys).
-vault_argocd_repo_ssh_key: |
-  -----BEGIN OPENSSH PRIVATE KEY-----
-  CHANGE_ME
-  -----END OPENSSH PRIVATE KEY-----
-
 # Optional: only if the GHCR images stay private. A classic PAT with read:packages.
 vault_ghcr_pull_user: ""
 vault_ghcr_pull_token: ""

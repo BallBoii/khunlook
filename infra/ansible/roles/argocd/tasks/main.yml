@@ -97,7 +97,7 @@
       register: ns
       changed_when: "'unchanged' not in ns.stdout"
 
-    - name: Secrets (OpenRouter key, repo deploy key, optional GHCR pull secret)
+    - name: Secrets (OpenRouter key, optional GHCR pull secret)
       ansible.builtin.command: kubectl apply -f -
       args:
         stdin: "{{ lookup('ansible.builtin.template', 'secrets.yaml.j2') }}"

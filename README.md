@@ -74,16 +74,15 @@ The full step-by-step guide, with troubleshooting, is
 
 ### 2. Prepare GitHub (once per repository)
 
-1. Create a read-only **deploy key** for Argo CD:
-   `ssh-keygen -t ed25519 -N "" -f ~/.ssh/argocd-deploy-key`, and add the `.pub` under
-   *Settings → Deploy keys*.
-2. *Settings → Actions → General → Workflow permissions*: **Read and write**.
-3. *Actions → build-deploy → Run workflow* to build all 5 images once (~10–15 min).
-4. Make the 5 `khunlook-*` packages **public** (*Packages → Package settings*), or use a pull token
+The repository is **public**, so Argo CD reads it over HTTPS with no key or token.
+
+1. *Settings → Actions → General → Workflow permissions*: **Read and write**.
+2. *Actions → build-deploy → Run workflow* to build all 5 images once (~10–15 min).
+3. Make the 5 `khunlook-*` packages **public** (*Packages → Package settings*), or use a pull token
    (see the guide).
 
 > Using a fork? Replace `ballboii` / `BallBoii/khunlook` with your account and repository name in
-> `deploy/`, the workflow and `infra/ansible/group_vars/all/main.yml`
+> `deploy/`, the workflow and the Makefile. The fork must be public too (or see the guide).
 > ([details](infra/README.md#5-github-repository-registry-and-ci-settings)).
 
 ### 3. Add the secrets
@@ -91,7 +90,7 @@ The full step-by-step guide, with troubleshooting, is
 ```bash
 cd infra/ansible
 cp vault.example.yml group_vars/all/vault.yml
-$EDITOR group_vars/all/vault.yml           # OpenRouter API key + private deploy key
+$EDITOR group_vars/all/vault.yml           # OpenRouter API key (+ sudo/SSH passwords if needed)
 ansible-vault encrypt group_vars/all/vault.yml
 ```
 

@@ -114,42 +114,39 @@ and only joins the Pis.
 
 Run these steps once per repository (a fork needs them too).
 
-**a. Deploy key for Argo CD** (read-only access to this private repo):
+**Argo CD needs no key.** The repository is public, so Argo CD reads it anonymously over HTTPS
+(`repoURL: https://github.com/BallBoii/khunlook.git` in
+[`deploy/argocd/khunlook-app.yaml`](../deploy/argocd/khunlook-app.yaml)). If you ever make the repo
+private, Argo CD can no longer read it: add the repository with a read-only token in the Argo CD UI
+(*Settings → Repositories*), or make it public again.
 
-```bash
-ssh-keygen -t ed25519 -N "" -C argocd -f ~/.ssh/argocd-deploy-key
-cat ~/.ssh/argocd-deploy-key.pub
-```
-
-GitHub → repo **Settings → Deploy keys → Add deploy key** → paste the `.pub`. Leave *Allow write access* **off**.
-
-**b. Let CI push the tag bumps**: **Settings → Actions → General → Workflow permissions →
+**a. Let CI push the tag bumps**: **Settings → Actions → General → Workflow permissions →
 Read and write permissions**. If `main` has branch protection, allow GitHub Actions to bypass it,
 or CI cannot commit the tag bumps.
 
-**c. Build the images once**: merge this setup into `main`, then **Actions → build-deploy → Run workflow**.
+**b. Build the images once**: merge this setup into `main`, then **Actions → build-deploy → Run workflow**.
 This builds all 5 images (about 10–15 min under QEMU) and commits their tags to `deploy/k8s/kustomization.yaml`.
 
-**d. Make the images pullable** (pick one):
+**c. Make the images pullable** (pick one):
 - *Public images (simplest)*: GitHub → your profile → **Packages** → open each `khunlook-*` package →
-  **Package settings → Change visibility → Public**. The repo itself stays private.
+  **Package settings → Change visibility → Public**.
 - *Private images*: create a classic PAT with `read:packages` and set `vault_ghcr_pull_user` /
   `vault_ghcr_pull_token` in step 6. Ansible then creates a pull secret for the app namespace.
 
-**e. Optional, faster builds**: if your plan offers arm64 runners, set **Settings → Secrets and variables →
+**d. Optional, faster builds**: if your plan offers arm64 runners, set **Settings → Secrets and variables →
 Actions → Variables → `ARM_RUNNER` = `ubuntu-24.04-arm`**. Builds then run natively instead of under QEMU.
 
 > Forked or renamed repository? Replace `ballboii`/`BallBoii/khunlook` in
 > `deploy/k8s/kustomization.yaml`, `deploy/k8s/*/*.yaml`, `deploy/k8s/prepull/prepull.yaml`,
-> `deploy/argocd/khunlook-app.yaml`, `IMAGE_PREFIX` in the workflow, `REGISTRY` in the Makefile, and
-> `app_repo_url` in `ansible/group_vars/all/main.yml`. GHCR names must be lowercase.
+> `deploy/argocd/khunlook-app.yaml` (`repoURL`), `IMAGE_PREFIX` in the workflow and `REGISTRY` in the
+> Makefile. GHCR names must be lowercase.
 
 ## 6. Secrets (Ansible Vault)
 
 ```bash
 cd infra/ansible
 cp vault.example.yml group_vars/all/vault.yml
-$EDITOR group_vars/all/vault.yml     # OpenRouter key + the PRIVATE deploy key (~/.ssh/argocd-deploy-key)
+$EDITOR group_vars/all/vault.yml     # OpenRouter API key
 ansible-vault encrypt group_vars/all/vault.yml
 ```
 
@@ -248,7 +245,6 @@ Main settings ([`ansible/group_vars/all/main.yml`](ansible/group_vars/all/main.y
 | `argocd_chart_version` | `10.17.2` | Argo CD Helm chart (Argo CD v3.6.1) |
 | `node_monitor_grace_period` | `20s` | How fast a pulled Pi is marked NotReady (Kubernetes default 50 s) |
 | `node_status_update_frequency` | `5s` | How often kubelets report (default 10 s) |
-| `app_repo_url` / `app_repo_revision` | `git@github.com:BallBoii/khunlook.git` / `main` | What Argo CD watches |
 
 ## Troubleshooting
 
@@ -259,9 +255,9 @@ Main settings ([`ansible/group_vars/all/main.yml`](ansible/group_vars/all/main.y
 | `ansible all -m ping` fails for the VM | VM not bridged, or IP changed; check UTM network mode and the DHCP reservation |
 | Node joins but stays `NotReady` | `kubectl -n kube-flannel get pods -o wide`; on a Pi with both Wi-Fi and Ethernet, disable the one you don't use so Flannel picks the right interface |
 | kubelet crash-loops on a Pi | `cat /proc/cmdline` must contain `cgroup_memory=1 cgroup_enable=memory`; reboot the Pi |
-| Pods `ImagePullBackOff` | CI has not built that image yet (step 5c), or the GHCR package is private without a pull token (5d) |
-| Argo CD app `Unknown` / repo error | Deploy key missing or wrong: Settings → Repositories in the Argo CD UI shows the error; fix the vault value and re-run `make cluster` |
-| CI `bump` job fails to push | Workflow permissions not read/write, or branch protection on `main` (step 5b) |
+| Pods `ImagePullBackOff` | CI has not built that image yet (step 5b), or the GHCR package is private without a pull token (5c) |
+| Argo CD app `Unknown` / repo error | The repo is no longer public, or `repoURL` is wrong. *Settings → Repositories* in the Argo CD UI shows the error |
+| CI `bump` job fails to push | Workflow permissions not read/write, or branch protection on `main` (step 5a) |
 | Nodes flap `NotReady` | Unstable network (Wi-Fi). Use cables, or raise `node_monitor_grace_period` to `40s` |
 | Master IP changed | Cluster certificates are bound to the old IP: restore the reservation, or reset (below) |
 | Everything stops | The Mac went to sleep: run `caffeinate -dims` |

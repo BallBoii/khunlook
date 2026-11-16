@@ -248,7 +248,7 @@ is the one to use because it never runs app pods and is never unplugged during t
 |------|----|-----|-----|
 | model-service pods | `openrouter.ai:443` | embeddings + LLM | NAT through the Pi's IP, then the router |
 | containerd on every Pi | `ghcr.io:443` | pull app images | the Pi's own IP |
-| Argo CD repo-server (master) | `github.com:22` (SSH) | read `deploy/k8s` on `main` every ~60 s | NAT through the master's IP |
+| Argo CD repo-server (master) | `github.com:443` (HTTPS, no key) | read `deploy/k8s` on `main` every ~60 s | NAT through the master's IP |
 | apt on every node | `pkgs.k8s.io`, Debian/Ubuntu mirrors | packages (Ansible only) | node IP |
 
 Nothing on the internet connects *into* the LAN; there are no port forwards on the router.

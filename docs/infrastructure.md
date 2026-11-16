@@ -175,7 +175,7 @@ sequenceDiagram
     CI->>REG: push khunlook-{svc}:{sha}
     CI->>GH: commit "deploy: {svc} -> {sha}"<br/>(deploy/k8s/kustomization.yaml)
     loop every ~60 s
-        A->>GH: fetch main (read-only deploy key)
+        A->>GH: fetch main (HTTPS, public repo: no key)
     end
     A->>A: kustomize build deploy/k8s, diff with live state
     A->>K: apply changed Deployments (OutOfSync → Synced)
@@ -206,9 +206,9 @@ flowchart LR
     REG -->|image pull| CL
 ```
 
-What Argo CD does **not** manage: its own installation (Helm, via Ansible) and the two secrets
-(`openrouter` API key, repo deploy key), which Ansible creates from Ansible Vault so they never
-appear in Git.
+What Argo CD does **not** manage: its own installation (Helm, via Ansible) and the `openrouter`
+API key secret, which Ansible creates from Ansible Vault so it never appears in Git. Argo CD needs no
+secret to read the repository: it is public and read over HTTPS.
 
 ---
 

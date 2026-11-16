@@ -12,10 +12,9 @@ argocd_namespace: argocd
 node_monitor_grace_period: 20s
 node_status_update_frequency: 5s
 
-# What Argo CD deploys.
+# Namespace of the app. What Argo CD deploys (the public GitHub repo, over HTTPS) is set in
+# deploy/argocd/khunlook-app.yaml.
 app_namespace: khunlook
-app_repo_url: git@github.com:BallBoii/khunlook.git
-app_repo_revision: main
 
 # Where the cluster's admin kubeconfig is copied on your Mac (git-ignored).
 kubeconfig_local: "{{ playbook_dir }}/artifacts/kubeconfig"
