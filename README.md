@@ -179,6 +179,55 @@ a minute. To roll back, `git revert` the `deploy:` commit.
 
 ---
 
+## Controlling the cluster
+
+Run these on the master VM, from the repo root.
+
+### Install the Argo CD CLI and log in (once)
+
+```bash
+curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/download/v3.6.1/argocd-linux-arm64
+sudo install -m 555 argocd /usr/local/bin/argocd && rm argocd
+
+argocd login <master-ip>:30443 --username admin --password "$(make -s argocd-password)" --insecure
+```
+
+`--insecure` accepts Argo CD's self-signed certificate.
+
+### Turn automatic sync off and on
+
+```bash
+argocd app get khunlook                                                  # sync policy, status and health
+argocd app set khunlook --sync-policy none                               # OFF: Argo CD stops changing the cluster
+argocd app set khunlook --sync-policy automated --auto-prune --self-heal # ON again
+argocd app sync khunlook                                                 # one manual sync while it is off
+```
+
+While automatic sync is off, a `git push` is not deployed and manual `kubectl` changes are kept.
+Turning it back on makes the cluster match Git again. `make cluster` and `make deploy` also turn it
+back on, because they re-apply `deploy/argocd/khunlook-app.yaml`.
+
+### Change the number of replicas
+
+**Permanently (through Git).** Edit `replicas:` in the service's manifest, for example
+`deploy/k8s/rag/rag.yaml`, then commit and `git push` to `main`. Argo CD applies it within about a
+minute.
+
+**Temporarily (by hand).** Turn automatic sync off first; otherwise Argo CD puts the number back within
+seconds.
+
+```bash
+argocd app set khunlook --sync-policy none
+kubectl -n khunlook scale deploy/rag --replicas=3         # one service
+kubectl -n khunlook scale deploy --all --replicas=2       # every service
+kubectl -n khunlook get pods -o wide                      # see where the pods landed
+```
+
+The services are `frontend`, `api-gateway`, `rag`, `vector-db` and `model-service`. When automatic
+sync is turned back on, the replica counts return to the values in Git.
+
+---
+
 ## Running locally (without a cluster)
 
 Requires Docker and an OpenRouter key:
