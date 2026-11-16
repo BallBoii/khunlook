@@ -92,16 +92,17 @@ dev-down:
 	$(COMPOSE) down
 
 # ---- cluster (infra/README.md) -------------------------------------------------------------
+# Run these ON the master VM, from its clone of this repo: Ansible and kubectl live there.
 # Normal deploys need none of these: push to main, CI builds and bumps deploy/k8s, Argo CD syncs.
 # `make push-*` is only a manual fallback (images go to $(REGISTRY), the same names CI uses).
 KUBECONFIG_LOCAL ?= infra/ansible/artifacts/kubeconfig
 
-cluster:             ## build/refresh the whole cluster + Argo CD (needs ansible-core, vault password)
-	cd infra/ansible && ansible-playbook site.yml --ask-vault-pass
+cluster:             ## build/refresh the whole cluster + Argo CD (needs ansible-core and infra/ansible/group_vars/all/vault.yml)
+	cd infra/ansible && ansible-playbook site.yml
 
 cluster-reset:       ## WIPE the cluster on the master and every Pi (then `make cluster` rebuilds it)
 	@read -p "Delete the Kubernetes cluster on ALL nodes? [y/N] " ok && [ "$$ok" = y ]
-	cd infra/ansible && ansible all --ask-vault-pass -m shell -a 'kubeadm reset -f; rm -rf /etc/cni/net.d; ip link delete cni0; ip link delete flannel.1; crictl --runtime-endpoint unix:///run/containerd/containerd.sock rmp -af; systemctl restart containerd; true'
+	cd infra/ansible && ansible all -m shell -a 'kubeadm reset -f; rm -rf /etc/cni/net.d; ip link delete cni0; ip link delete flannel.1; crictl --runtime-endpoint unix:///run/containerd/containerd.sock rmp -af; systemctl restart containerd; true'
 
 # Demo: start with no app containers, then ONE command deploys everything from GitHub.
 KUBECTL = kubectl --kubeconfig $(KUBECONFIG_LOCAL)

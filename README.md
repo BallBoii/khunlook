@@ -58,127 +58,124 @@ git push ─► GitHub Actions: test ─► build changed images ─► GHCR ─
 
 ## How to set up the cluster and deploy the application
 
-The full step-by-step guide, with troubleshooting, is
-**[infra/README.md](infra/README.md)**. In short:
+Steps 1–4 are done on the Mac and in a browser. **From step 5 on, every command is typed on the master
+VM.** More detail and troubleshooting: **[infra/README.md](infra/README.md)**.
 
-### 1. Prepare the hardware
+### 1. Create the master VM (on the Mac)
 
-Connect the Mac and the 5 Pis to the TP-Link router. **Use cables**, at least for the Mac: the master VM
-shares the Mac's connection, and over Wi-Fi it keeps dropping off the network (see 1a).
+1. Connect the Mac and the Pis to the router **with cables**.
+2. Download **Ubuntu Server 24.04 LTS for ARM** (`ubuntu-24.04.x-live-server-arm64.iso`).
+3. UTM → **Create a New Virtual Machine** → **Virtualize** → **Linux** → select the ISO.
+   Set **4 CPU cores, 4096 MB RAM, 30 GB** storage.
+4. **Before the first boot**, open the VM's settings → **Network**:
 
-#### 1a. Master: Ubuntu VM in UTM
+   | Setting | Value |
+   |---------|-------|
+   | Network Mode | **Bridged (Advanced)** |
+   | Bridged Interface | the Mac's **Ethernet** adapter, not Wi-Fi (list them with `networksetup -listallhardwareports`) |
+   | Emulated Network Card | **virtio-net-pci** |
 
-1. Download **Ubuntu Server 24.04 LTS for ARM** (`ubuntu-24.04.x-live-server-arm64.iso`).
-2. UTM → **Create a New Virtual Machine** → **Virtualize** → **Linux** → select the ISO.
-   Hardware: **4 CPU cores, 4096 MB RAM**, storage **30 GB** (less fills up and Kubernetes stops scheduling pods).
-3. **Before the first boot**, open the VM's settings → **Network**:
+5. Install Ubuntu: user `ubuntu`, hostname `k8s-master`, tick **Install OpenSSH server**. Then eject the
+   ISO (*CD/DVD → Clear*) and reboot.
+6. Run `caffeinate -dimsu` in a Mac terminal and leave it open. If the Mac sleeps, the cluster stops.
 
-   | Setting | Value | Why |
-   |---------|-------|-----|
-   | Network Mode | **Bridged (Advanced)** | The VM gets its own IP on the router's LAN, so the Pis can reach it. *Shared Network* (NAT) does **not** work: the Pis could not connect to the master |
-   | Bridged Interface | the Mac's **Ethernet** adapter (e.g. `en2`, "USB 10/100/1000 LAN") | Bridging over **Wi-Fi (`en0`) is unreliable**: the router stops delivering to the VM after a while ("Host is down") |
-   | Emulated Network Card | **virtio-net-pci** | fastest, supported by Ubuntu out of the box |
-   | MAC Address | leave it, but **write it down** | the router uses it to give the VM a fixed IP (1c) |
+### 2. Flash the Pis
 
-   Check which interface is the Ethernet adapter on the Mac: `networksetup -listallhardwareports`.
-4. Install Ubuntu: user `ubuntu`, hostname `k8s-master`, tick **Install OpenSSH server**. After
-   installing, eject the ISO (*CD/DVD → Clear*) and reboot.
-5. **Keep the Mac awake and on power** while the cluster runs: run `caffeinate -dimsu` in a terminal
-   and leave it open. If the Mac sleeps, the VM stops and so does the whole cluster.
+Flash each SD card with **Raspberry Pi OS Lite (64-bit)** in Raspberry Pi Imager. In *Edit settings*:
 
-#### 1b. Workers: flash the Pis
+- hostname `pi-worker-N` (a different number on each Pi)
+- username `pi` and a password, the **same password on every Pi**
+- *Services* → **Enable SSH** → **Use password authentication**
 
-Flash each Pi with **Raspberry Pi OS Lite (64-bit)** using Raspberry Pi Imager. In *Edit settings*: hostname
-`pi-worker-N` (1–5), user `pi`, enable SSH with your Mac's public key. Plug in the cable and boot.
+Plug in the network cable and power on.
 
-#### 1c. Find each machine's IP and make it permanent
+### 3. Give every machine a fixed IP (on the router)
 
-1. Open the router's admin page **http://192.168.0.1** and log in.
-2. Go to **DHCP → DHCP Client List** (on some models *Network → DHCP Server → Client List*). It lists every
-   connected device with its **hostname, MAC address and IP**:
+1. Open **http://192.168.0.1** → **DHCP → DHCP Client List**. Write down the IP of `k8s-master` and of
+   each `pi-worker-N`.
+2. **DHCP → Address Reservation → Add New** for each machine: its MAC address and its current IP →
+   *Enabled* → **Save**.
+3. Reboot the VM and the Pis and check the list shows the same IPs.
 
-   | Client name | MAC address | IP (example) | Which machine |
-   |-------------|-------------|--------------|---------------|
-   | `k8s-master` | the MAC you wrote down in UTM | `192.168.0.106` | master VM |
-   | `pi-worker-2` | starts with `b8:27:eb`, `dc:a6:32`, `d8:3a:dd` or `2c:cf:67` (Raspberry Pi) | `192.168.0.103` | Pi 2 |
-   | `pi-worker-3` | (Raspberry Pi) | `192.168.0.104` | Pi 3 |
-   | … | | | |
+The master's IP must never change afterwards: a new IP means rebuilding the cluster.
 
-   No hostname shown? Match by MAC: on the VM run `ip link`, on a Pi `ip link show eth0`. You can also
-   read the IP on the machine itself: `ip -4 addr` (VM) or `hostname -I` (Pi).
-3. Go to **DHCP → Address Reservation** → **Add New** for **each** machine: its MAC address and the IP it
-   has now → *Enabled* → **Save**. Without a reservation the IP can change after a reboot. **The master's IP
-   must never change**: it is written into the cluster certificates, and a new IP means rebuilding the
-   cluster. (Leave *ARP Binding* off; only the reservation is needed.)
-4. Reboot the VM and the Pis, then check the client list shows the same IPs.
-5. Put the IPs in [`infra/ansible/inventory.ini`](infra/ansible/inventory.ini):
-   ```ini
-   [master]
-   k8s-master  ansible_host=192.168.0.106 ansible_user=ubuntu
-
-   [workers]
-   pi-worker-2 ansible_host=192.168.0.103
-   pi-worker-3 ansible_host=192.168.0.104
-   ```
-
-#### 1d. Check access from the Mac
-
-```bash
-brew install ansible kubectl
-ssh-copy-id ubuntu@192.168.0.106                 # master: log in with your key from now on
-cd infra/ansible && ansible all -m ping          # every machine answers "pong"
-```
-
-### 2. Prepare GitHub (once per repository)
-
-The repository is **public**, so Argo CD reads it over HTTPS with no key or token.
+### 4. Prepare GitHub (once per repository)
 
 1. *Settings → Actions → General → Workflow permissions*: **Read and write**.
-2. *Actions → build-deploy → Run workflow* to build all 5 images once (~10–15 min).
-3. Make the 5 `khunlook-*` packages **public** (*Packages → Package settings*), or use a pull token
-   (see the guide).
+2. *Actions → build-deploy → Run workflow* to build all 5 images (~10–15 min).
+3. *Packages* → each `khunlook-*` package → *Package settings* → make it **public**.
 
-> Using a fork? Replace `ballboii` / `BallBoii/khunlook` with your account and repository name in
-> `deploy/`, the workflow and the Makefile. The fork must be public too (or see the guide).
-> ([details](infra/README.md#5-github-repository-registry-and-ci-settings)).
+### 5. Install the tools (on the master VM)
 
-### 3. Add the secrets
+Log in to the VM (the UTM window, or `ssh ubuntu@<master-ip>` from the Mac):
 
 ```bash
-cd infra/ansible
-cp vault.example.yml group_vars/all/vault.yml
-$EDITOR group_vars/all/vault.yml           # OpenRouter API key (+ sudo/SSH passwords if needed)
-ansible-vault encrypt group_vars/all/vault.yml
+sudo apt update && sudo apt install -y git make sshpass pipx
+pipx install ansible-core && pipx ensurepath && exec $SHELL -l
+git clone https://github.com/BallBoii/khunlook.git && cd khunlook
 ```
 
-### 4. Build the cluster and deploy (one command)
+### 6. Fill in the inventory and the secrets
+
+1. Put the IPs from step 3 in `infra/ansible/inventory.ini`:
+
+   ```ini
+   [master]
+   k8s-master  ansible_host=192.168.0.106 ansible_user=ubuntu ansible_connection=local
+
+   [workers]
+   pi-worker-1 ansible_host=192.168.0.103
+   pi-worker-2 ansible_host=192.168.0.104
+   ```
+
+2. Create the secrets file:
+
+   ```bash
+   cp infra/ansible/vault.example.yml infra/ansible/group_vars/all/vault.yml
+   nano infra/ansible/group_vars/all/vault.yml
+   ```
+
+   | Variable | Value |
+   |----------|-------|
+   | `vault_openrouter_api_key` | your key from https://openrouter.ai/keys |
+   | `vault_master_become_password` | password of `ubuntu` on the VM |
+   | `vault_workers_ssh_password` | password of `pi` on the Pis |
+   | `vault_workers_become_password` | the same `pi` password |
+
+   The file is plain text and git-ignored. Never commit it.
+
+3. Check that Ansible reaches every machine:
+
+   ```bash
+   (cd infra/ansible && ansible all -m ping)      # every machine answers "pong"
+   ```
+
+### 7. Build the cluster and deploy
 
 ```bash
-make cluster          # from the repo root; asks for the vault password, takes ~20–30 min
+make cluster          # from the repo root, takes ~20–30 min
 ```
 
-This installs containerd and Kubernetes on every node, initialises the master, joins the 5 Pis,
-installs Argo CD and points it at this repository. Argo CD then deploys the application.
+This installs Kubernetes on every node, joins the Pis and installs Argo CD, which then deploys the
+application from this repository.
 
-### 5. Use it
+### 8. Check it
 
 ```bash
-export KUBECONFIG=$PWD/infra/ansible/artifacts/kubeconfig
-kubectl get nodes                     # master + 5 Pis Ready
+kubectl get nodes                     # master and every Pi are Ready
 kubectl -n khunlook get pods -o wide  # 2 pods per service, spread over the Pis
 make argocd-password                  # Argo CD login (user: admin)
 ```
 
-Use your master's IP from step 1c:
+Open in a browser, with your master's IP:
 
 - **Chatbot:** http://192.168.0.106:30080/?demo
 - **Argo CD:** https://192.168.0.106:30443
 
-### 6. Deploy a change
+### 9. Deploy a change
 
-Commit and `git push` to `main`. CI tests and builds the changed services and commits the new image
-tags; Argo CD rolls them out within about a minute. No `kubectl` is needed. To roll back,
-`git revert` the `deploy:` commit.
+Commit and `git push` to `main`. CI builds the changed services and Argo CD rolls them out within about
+a minute. To roll back, `git revert` the `deploy:` commit.
 
 ---
 

@@ -207,21 +207,21 @@ flowchart LR
 ```
 
 What Argo CD does **not** manage: its own installation (Helm, via Ansible) and the `openrouter`
-API key secret, which Ansible creates from Ansible Vault so it never appears in Git. Argo CD needs no
+API key secret, which Ansible creates from the git-ignored `vault.yml` so it never appears in Git. Argo CD needs no
 secret to read the repository: it is public and read over HTTPS.
 
 ---
 
 ## 5. Building the cluster (Ansible)
 
-One playbook, run from the Mac over SSH, takes fresh machines to a cluster that deploys itself.
+One playbook, run on the master VM (local connection to itself, SSH to the Pis), takes fresh machines to a cluster that deploys itself.
 
 ```mermaid
 flowchart TB
-    START(["make cluster<br/>ansible-playbook site.yml --ask-vault-pass"])
-    PRE["Preflight (Mac)<br/>vault secrets present?"]
+    START(["make cluster<br/>ansible-playbook site.yml"])
+    PRE["Preflight (master VM)<br/>vault secrets present?"]
     COM["common (all nodes)<br/>swap off · kernel modules · sysctls<br/>containerd · kubelet/kubeadm/kubectl v1.36"]
-    MAS["master (VM)<br/>kubeadm init · kubeconfig → Mac<br/>Flannel"]
+    MAS["master (VM)<br/>kubeadm init · kubeconfig for ubuntu<br/>Flannel"]
     WRK["pi_worker (Pis)<br/>arm64 check · memory cgroups + reboot<br/>kubeadm join · wait Ready"]
     ACD["argocd (VM)<br/>Helm · Argo CD chart<br/>namespace · secrets · Application"]
     DONE(["Argo CD syncs deploy/k8s<br/>app running on the Pis"])
@@ -231,23 +231,26 @@ flowchart TB
 
 ---
 
-## 6. How the Mac reaches the cluster
+## 6. How you reach the cluster
 
 ```mermaid
 flowchart LR
     subgraph MAC["Mac"]
-        ANS["Ansible"]
-        KC["kubectl<br/>infra/ansible/artifacts/kubeconfig"]
+        TERM["Terminal<br/>UTM window or ssh"]
         BR["Browser"]
     end
     subgraph VM["k8s-master 192.168.0.10"]
+        ANS["Ansible<br/>repo clone"]
+        KC["kubectl<br/>~/.kube/config"]
         API["kube-apiserver :6443"]
         ETCD[("etcd")]
         NP["NodePorts<br/>:30080 app · :30443 Argo CD"]
     end
     PIS["Pis<br/>kubelet :10250"]
 
-    ANS -->|"SSH :22"| VM
+    TERM -->|"SSH :22"| ANS
+    TERM --> KC
+    ANS -->|"local, no SSH"| API
     ANS -->|"SSH :22"| PIS
     KC -->|"HTTPS :6443<br/>admin client cert"| API
     API --- ETCD
@@ -258,7 +261,8 @@ flowchart LR
 
 | Port | On | Used by |
 |------|----|---------|
-| 22 | all nodes | Ansible (SSH) |
+| 22 | Pis | Ansible on the master (SSH) |
+| 22 | master | your terminal from the Mac (optional; the UTM window works too) |
 | 6443 | master | `kubectl`, kubelets, Argo CD → API server |
 | 10250 | all nodes | API server → kubelet (logs, exec) |
 | 8472/udp | all nodes | Flannel VXLAN pod traffic between nodes |

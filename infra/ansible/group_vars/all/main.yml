@@ -16,5 +16,6 @@ node_status_update_frequency: 5s
 # deploy/argocd/khunlook-app.yaml.
 app_namespace: khunlook
 
-# Where the cluster's admin kubeconfig is copied on your Mac (git-ignored).
+# Copy of the cluster's admin kubeconfig inside this checkout on the master (git-ignored).
+# The Makefile's kubectl targets use it.
 kubeconfig_local: "{{ playbook_dir }}/artifacts/kubeconfig"

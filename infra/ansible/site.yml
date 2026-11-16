@@ -1,5 +1,5 @@
 # One command, fresh machines -> cluster + Argo CD syncing the app from GitHub:
-#   ansible-playbook site.yml --ask-vault-pass
+#   ansible-playbook site.yml
 # Safe to re-run: init/join are skipped on nodes that already have them, Helm upgrades in place.
 
 - name: Preflight
@@ -16,7 +16,7 @@
           - "'CHANGE_ME' not in vault_openrouter_api_key"
         fail_msg: >-
           Fill in group_vars/all/vault.yml from vault.example.yml (OpenRouter key)
-          and run with --ask-vault-pass.
+          then run again.
         quiet: true
 
 - name: Prepare every node (containerd, kubelet, kubeadm)

@@ -1,7 +1,7 @@
 # Template for group_vars/all/vault.yml. NEVER commit the decrypted file:
 #   cp vault.example.yml group_vars/all/vault.yml
 #   $EDITOR group_vars/all/vault.yml
-#   ansible-vault encrypt group_vars/all/vault.yml
+# The file stays plain text (not encrypted). It is git-ignored: keep it on the master VM only.
 #
 # OpenRouter key used by model-service (https://openrouter.ai/keys).
 vault_openrouter_api_key: "sk-or-v1-CHANGE_ME"
@@ -14,5 +14,5 @@ vault_ghcr_pull_token: ""
 # Used instead of --ask-become-pass, which can only send one password to every host.
 vault_master_become_password: ""
 vault_workers_become_password: ""
-# SSH login password for the Pis. "" = log in with your SSH key instead (recommended).
+# SSH login password of the Pis' user (the one set in Raspberry Pi Imager; the same on every Pi).
 vault_workers_ssh_password: ""

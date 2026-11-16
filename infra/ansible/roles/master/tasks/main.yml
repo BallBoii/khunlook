@@ -64,7 +64,8 @@
         owner: "{{ ansible_user }}"
         mode: "0600"
 
-- name: Copy the admin kubeconfig to this Mac ({{ kubeconfig_local }})
+# Ansible runs on the master, so this lands in the repo checkout here, readable without sudo.
+- name: Copy the admin kubeconfig into the repo checkout ({{ kubeconfig_local }})
   ansible.builtin.fetch:
     src: /etc/kubernetes/admin.conf
     dest: "{{ kubeconfig_local }}"

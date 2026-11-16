@@ -1,3 +1,3 @@
 # Passwords for the Pis' user, from the vault (group_vars/all/vault.yml). Leave a value "" if unused.
-ansible_password: "{{ vault_workers_ssh_password | default('') }}"            # SSH login ("" = SSH key)
+ansible_password: "{{ vault_workers_ssh_password | default('') }}"            # SSH login (needs sshpass on the master)
 ansible_become_password: "{{ vault_workers_become_password | default('') }}"  # sudo ("" = passwordless sudo)

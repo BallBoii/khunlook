@@ -33,9 +33,10 @@ IPs, Services, DNS and ports in detail: [docs/network.md](../docs/network.md).
 
 ## 1. What you need
 
-- **Mac** (Apple Silicon) with [UTM](https://mac.getutm.app), Docker Desktop (optional, for local
-  builds) and `kubectl` (`brew install kubectl`).
-- **Ansible** on the Mac: `brew install ansible` (or `pipx install ansible-core`). No extra collections needed.
+- **Mac** (Apple Silicon) with [UTM](https://mac.getutm.app) and Docker Desktop (optional, for local
+  builds). The Mac only hosts the master VM: it needs no Ansible and no `kubectl`.
+- **Ansible and `kubectl` run on the master VM** (set up in step 3). You work in the VM's terminal:
+  the UTM window, or `ssh ubuntu@192.168.0.106` from the Mac.
 - **5 × Raspberry Pi 3 B+** with power, SD cards and Ethernet cables, and the **TP-Link router**.
 - Internet through the router. The Pis pull images from GHCR, Argo CD reads GitHub, and
   model-service calls OpenRouter.
@@ -82,14 +83,24 @@ it directly, which rules out NAT and Docker Desktop.
    - Note the VM's **MAC address** shown there for the DHCP reservation (step 2).
 5. Install Ubuntu: user `ubuntu`, hostname `k8s-master`, tick **Install OpenSSH server**. No snaps needed.
    After installing, eject the ISO (CD/DVD → Clear) and reboot.
-6. On the router, reserve the VM's IP (e.g. **192.168.0.106**) for the VM's MAC, then reboot the VM and check:
+6. On the router, reserve the VM's IP (e.g. **192.168.0.106**) for the VM's MAC, then reboot the VM and
+   check, in the VM:
    ```bash
-   ssh-copy-id ubuntu@192.168.0.106      # from the Mac
-   ssh ubuntu@192.168.0.106 'ip -4 addr show | grep 192.168.0.106 && sudo -n true && echo sudo-ok'
+   ip -4 addr show | grep 192.168.0.106 && sudo -n true && echo sudo-ok
    ```
    If `sudo -n true` fails, allow passwordless sudo:
-   `echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/ubuntu`.
-7. **Keep the Mac awake** while the cluster runs, e.g. by running `caffeinate -dims` in a terminal.
+   `echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/ubuntu`
+   (or put the password in the vault as `vault_master_become_password`, step 6).
+7. **Make the VM the Ansible runner.** Everything from here on is typed in the VM, in its clone of
+   this repository:
+   ```bash
+   sudo apt update && sudo apt install -y git make sshpass pipx
+   pipx install ansible-core && pipx ensurepath && exec $SHELL -l
+   git clone https://github.com/BallBoii/khunlook.git && cd khunlook
+   ```
+   Ansible manages the master over a local connection (`ansible_connection=local` in the inventory)
+   and the Pis over SSH with the password from `vault.yml` (step 6; that is what `sshpass` is for).
+8. **Keep the Mac awake** while the cluster runs, e.g. by running `caffeinate -dims` in a terminal.
    If the Mac sleeps, the control plane stops.
 
 ## 4. Workers: flash the Pis
@@ -99,16 +110,18 @@ Use **Raspberry Pi Imager** for each SD card:
 - OS: **Raspberry Pi OS Lite (64-bit)** (recommended for 1 GB of RAM) or **Ubuntu Server 24.04 LTS (64-bit)**.
   A 32-bit image will not work; the playbook stops on it.
 - *Edit settings* (OS customisation):
-  - hostname `pi-worker-N`, username **`pi`** with a password
-  - **Services → Enable SSH → Allow public-key authentication only**, paste your Mac's `~/.ssh/id_ed25519.pub`
+  - hostname `pi-worker-N`, username **`pi`** with a password (the **same password on every Pi**)
+  - **Services → Enable SSH → Use password authentication**. Ansible logs in with this password
+    (`vault_workers_ssh_password`, step 6)
   - no Wi-Fi if you use cables
 
-Boot all five Pis and reserve their IPs on the router. Check from the Mac:
+Boot all five Pis and reserve their IPs on the router. Once `vault.yml` holds the passwords (step 6),
+check from the master VM:
 
 ```bash
 cd infra/ansible
 ansible all -m ping          # every host must answer "pong"
-ansible all -b -m command -a 'true'   # and passwordless sudo must work
+ansible all -b -m command -a 'true'   # and sudo must work
 ```
 
 ### Preparing the Pis before the master exists (optional)
@@ -118,7 +131,7 @@ The Pis can be prepared without the master: Ansible does everything except joini
 ```bash
 cd infra/ansible
 ansible workers -m ping                                         # the 5 Pis answer "pong"
-ansible-playbook site.yml --limit workers --skip-tags join      # add --ask-vault-pass once vault.yml exists
+ansible-playbook site.yml --limit workers --skip-tags join      # needs vault.yml (step 6) for the Pi password
 ```
 
 This sets the hostname, turns swap off, enables memory cgroups (**each Pi reboots once**), and
@@ -157,50 +170,60 @@ Actions → Variables → `ARM_RUNNER` = `ubuntu-24.04-arm`**. Builds then run n
 > `deploy/argocd/khunlook-app.yaml` (`repoURL`), `IMAGE_PREFIX` in the workflow and `REGISTRY` in the
 > Makefile. GHCR names must be lowercase.
 
-## 6. Secrets (Ansible Vault)
+## 6. Secrets (`vault.yml`)
+
+On the master VM:
 
 ```bash
 cd infra/ansible
 cp vault.example.yml group_vars/all/vault.yml
-$EDITOR group_vars/all/vault.yml     # OpenRouter API key
-ansible-vault encrypt group_vars/all/vault.yml
+nano group_vars/all/vault.yml
 ```
 
-If the master and the Pis need **different sudo passwords**, set `vault_master_become_password` and
-`vault_workers_become_password` in the vault (leave `""` for passwordless sudo). Don't pass
-`--ask-become-pass`: it sends one password to every host. To add them to an existing vault:
-`ansible-vault edit group_vars/all/vault.yml`.
+| Variable | Value |
+|----------|-------|
+| `vault_openrouter_api_key` | your OpenRouter API key |
+| `vault_master_become_password` | password of `ubuntu` on the VM (`""` if sudo asks for none) |
+| `vault_workers_ssh_password` | password of `pi` on the Pis |
+| `vault_workers_become_password` | the same `pi` password (`""` if sudo asks for none) |
 
-`group_vars/all/vault.yml` is git-ignored. Nothing secret is ever committed. If a value is missing, the
-playbook stops at the very first task.
+Don't pass `--ask-become-pass`: it sends one password to every host.
+
+The file is **plain text, not encrypted**. It is git-ignored, so it is never committed: keep it on the
+master VM only. If the OpenRouter key is missing, the playbook stops at the very first task.
 
 ## 7. Build the cluster (one command)
 
+On the master VM, from the repo root:
+
 ```bash
-make cluster            # = cd infra/ansible && ansible-playbook site.yml --ask-vault-pass
+make cluster            # = cd infra/ansible && ansible-playbook site.yml
 ```
 
 What happens, in order:
 
 | Play | Hosts | Steps |
 |------|-------|-------|
-| Preflight | Mac | Checks the vault secrets are filled in |
+| Preflight | VM (local) | Checks the vault secrets are filled in |
 | `common` | all | hostname, swap off, kernel modules + sysctls, **containerd** (systemd cgroups), kubelet/kubeadm/kubectl from pkgs.k8s.io **v1.36**, held at that version |
-| `master` | VM | `kubeadm init` (pod CIDR 10.244.0.0/16, node grace period 20 s), kubeconfig for `ubuntu`, copies it to `infra/ansible/artifacts/kubeconfig`, installs **Flannel v0.28.10** |
+| `master` | VM | `kubeadm init` (pod CIDR 10.244.0.0/16, node grace period 20 s), kubeconfig for `ubuntu` (`~/.kube/config`) plus a copy in `infra/ansible/artifacts/kubeconfig` for the `make` targets, installs **Flannel v0.28.10** |
 | `pi_worker` | Pis | arm64 check, memory cgroups on the kernel cmdline (**reboots once**), `kubeadm join`, waits for `Ready` |
 | `argocd` | VM | Helm, **Argo CD** chart 10.17.2 pinned to the master, `khunlook` namespace, `openrouter` + repo secrets, the Application |
 
 The playbook is safe to re-run: initialised or joined nodes are skipped and Helm only upgrades what changed.
-To try a single Pi first, run `ansible-playbook site.yml --ask-vault-pass --limit k8s-master,pi-worker-1`.
+To try a single Pi first, run `ansible-playbook site.yml --limit k8s-master,pi-worker-1`.
 
 ## 8. Check it
 
+On the master VM (`kubectl` works as is: the playbook wrote `~/.kube/config`):
+
 ```bash
-export KUBECONFIG=$PWD/infra/ansible/artifacts/kubeconfig     # from the repo root
 kubectl get nodes -o wide                  # k8s-master + 5 Pis, all Ready
 kubectl -n khunlook get pods -o wide       # 10 app pods on the Pis + 5 image-prepull pods
 make argocd-password                       # Argo CD admin password
 ```
+
+Open these in a browser on the Mac (or any machine on the LAN):
 
 - **App:** http://192.168.0.106:30080/?demo (`?demo` shows which pods served each request)
 - **Argo CD:** https://192.168.0.106:30443 (user `admin`; accept the self-signed certificate). The app
@@ -240,11 +263,11 @@ make argocd-password                       # Argo CD admin password
 ```
 infra/ansible/
 ├── ansible.cfg              # inventory, roles path, sudo
-├── inventory.ini            # [master] VM, [workers] Pis, [cluster] = both
+├── inventory.ini            # [master] VM (local connection), [workers] Pis (SSH), [cluster] = both
 ├── site.yml                 # the one playbook: preflight → common → master → pi_worker → argocd
 ├── vault.example.yml        # template for group_vars/all/vault.yml (git-ignored)
 ├── group_vars/all/main.yml  # versions, CIDR, timings, repo URL
-├── artifacts/               # kubeconfig fetched from the master (git-ignored)
+├── artifacts/               # copy of the master's admin kubeconfig (git-ignored)
 └── roles/
     ├── common/              # every node: kernel prep, containerd, kube packages
     ├── master/              # kubeadm init (templates/kubeadm-config.yaml.j2), Flannel
@@ -267,8 +290,9 @@ Main settings ([`ansible/group_vars/all/main.yml`](ansible/group_vars/all/main.y
 | Symptom | Fix |
 |---------|-----|
 | `Require 64-bit OS` fails | Reflash the Pi with a 64-bit image |
-| Preflight assertion fails | Fill `group_vars/all/vault.yml` (step 6) and pass `--ask-vault-pass` |
-| `ansible all -m ping` fails for the VM | VM not bridged, or IP changed; check UTM network mode and the DHCP reservation |
+| Preflight assertion fails | Fill `group_vars/all/vault.yml` (step 6) |
+| `ansible all -m ping` fails for a Pi | Wrong IP in the inventory, wrong `vault_workers_ssh_password`, password login not enabled on the Pi, `sshpass` missing on the VM, or the VM is not bridged (check UTM network mode) |
+| `ansible-playbook: command not found` on the VM | Step 3.7 was skipped, or the shell predates `pipx ensurepath`: open a new one |
 | Node joins but stays `NotReady` | `kubectl -n kube-flannel get pods -o wide`; on a Pi with both Wi-Fi and Ethernet, disable the one you don't use so Flannel picks the right interface |
 | kubelet crash-loops on a Pi | `cat /proc/cmdline` must contain `cgroup_memory=1 cgroup_enable=memory`; reboot the Pi |
 | Pods `ImagePullBackOff` | CI has not built that image yet (step 5b), or the GHCR package is private without a pull token (5c) |
@@ -278,7 +302,7 @@ Main settings ([`ansible/group_vars/all/main.yml`](ansible/group_vars/all/main.y
 | Master IP changed | Cluster certificates are bound to the old IP: restore the reservation, or reset (below) |
 | Everything stops | The Mac went to sleep: run `caffeinate -dims` |
 
-**Redo one Pi:** on the Pi, `sudo kubeadm reset -f && sudo rm -rf /etc/cni/net.d`. On the Mac,
+**Redo one Pi:** on the Pi, `sudo kubeadm reset -f && sudo rm -rf /etc/cni/net.d`. On the master VM,
 `kubectl delete node pi-worker-N`, then `make cluster` (or `--limit k8s-master,pi-worker-N`).
 
 **Start over completely:**

@@ -273,11 +273,9 @@ Nothing on the internet connects *into* the LAN; there are no port forwards on t
 
 ## 9. See the current addresses
 
-From the repo root on the Mac:
+On the master VM:
 
 ```bash
-export KUBECONFIG=$PWD/infra/ansible/artifacts/kubeconfig
-
 kubectl get nodes -o custom-columns='NODE:.metadata.name,IP:.status.addresses[0].address,PODS:.spec.podCIDR'
 kubectl -n khunlook get svc -o wide          # ClusterIPs, ports, NodePort
 kubectl -n khunlook get pods -o wide         # pod IPs and their node
