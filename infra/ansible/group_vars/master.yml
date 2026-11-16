@@ -1,3 +1,4 @@
 # sudo password for the master's user, from the vault (group_vars/all/vault.yml).
 # Leave it "" there if the user has passwordless sudo.
+ansible_password: "{{ vault_master_ssh_password | default('') }}"
 ansible_become_password: "{{ vault_master_become_password | default('') }}"
