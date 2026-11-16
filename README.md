@@ -181,7 +181,8 @@ a minute. To roll back, `git revert` the `deploy:` commit.
 
 ## Controlling the cluster
 
-Run these on the master VM, from the repo root.
+Run these on the master VM, from the repo root. For the demo script and what to do when something
+breaks, see **[docs/demo-day.md](docs/demo-day.md)**.
 
 ### Install the Argo CD CLI and log in (once)
 

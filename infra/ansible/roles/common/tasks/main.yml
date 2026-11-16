@@ -53,6 +53,7 @@
     name: [apt-transport-https, ca-certificates, curl, gpg, python3-debian, conntrack, socat, containerd]
     update_cache: true
     cache_valid_time: 3600
+    lock_timeout: 300      # a fresh Ubuntu runs unattended-upgrades right after boot
 
 - name: Containerd config directory
   ansible.builtin.file:
@@ -105,6 +106,7 @@
   ansible.builtin.apt:
     name: [kubelet, kubeadm, kubectl]
     update_cache: "{{ k8s_repo.changed }}"
+    lock_timeout: 300
 
 - name: Hold Kubernetes packages (upgrades must go through kubeadm)
   ansible.builtin.dpkg_selections:

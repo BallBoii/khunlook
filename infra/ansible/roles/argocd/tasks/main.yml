@@ -1,4 +1,4 @@
-# Argo CD on the master + everything it needs to deploy KhunLook from the private GitHub repo.
+# Argo CD on the master + everything it needs to deploy KhunLook from the public GitHub repo.
 # Uses the kubectl/helm CLIs on the master (admin.conf), so no Python Kubernetes client is needed.
 # Secrets come from group_vars/all/vault.yml and are never written to Git or to disk.
 
