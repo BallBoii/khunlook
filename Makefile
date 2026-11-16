@@ -20,7 +20,7 @@ COMPOSE        = docker compose -f deploy/docker/compose.yaml
 
 .PHONY: setup ingest estimate eval validate-index test build-vector-db push-vector-db run-vector-db \
         build-api-gateway push-api-gateway build-frontend push-frontend test-frontend build-rag push-rag build-model-service push-model-service run-model-service dev-up dev-down \
-        cluster cluster-reset render argocd-password
+        cluster cluster-reset app-down deploy render argocd-password
 
 setup:            ## install dev deps
 	$(PY) -m pip install -r ingest/requirements.txt -r services/vector-db/requirements.txt -r services/api-gateway/requirements.txt -r services/model/requirements.txt -r services/rag/requirements.txt
@@ -101,7 +101,23 @@ cluster:             ## build/refresh the whole cluster + Argo CD (needs ansible
 
 cluster-reset:       ## WIPE the cluster on the master and every Pi (then `make cluster` rebuilds it)
 	@read -p "Delete the Kubernetes cluster on ALL nodes? [y/N] " ok && [ "$$ok" = y ]
-	cd infra/ansible && ansible all --ask-vault-pass -m shell -a 'kubeadm reset -f; rm -rf /etc/cni/net.d; ip link delete cni0; ip link delete flannel.1; systemctl restart containerd; true'
+	cd infra/ansible && ansible all --ask-vault-pass -m shell -a 'kubeadm reset -f; rm -rf /etc/cni/net.d; ip link delete cni0; ip link delete flannel.1; crictl --runtime-endpoint unix:///run/containerd/containerd.sock rmp -af; systemctl restart containerd; true'
+
+# Demo: start with no app containers, then ONE command deploys everything from GitHub.
+KUBECTL = kubectl --kubeconfig $(KUBECONFIG_LOCAL)
+
+app-down:            ## remove every app container (Argo CD deletes everything it deployed)
+	$(KUBECTL) -n argocd delete application khunlook --ignore-not-found
+	-$(KUBECTL) -n khunlook wait --for=delete pod --all --timeout=180s
+	$(KUBECTL) -n khunlook get pods
+
+deploy:              ## the single deploy command: Argo CD pulls deploy/k8s from GitHub and starts it all
+	$(KUBECTL) apply -f deploy/argocd/khunlook-app.yaml
+	@echo "Waiting for Argo CD to create the 5 Deployments..."
+	@until [ "$$($(KUBECTL) -n khunlook get deploy -o name 2>/dev/null | wc -l)" -ge 5 ]; do sleep 2; done
+	$(KUBECTL) -n khunlook wait --for=condition=Available deploy --all --timeout=300s
+	$(KUBECTL) -n khunlook get pods -o wide
+	@echo "Ready: http://$$(sed -n 's#.*server: https://\([^:]*\):.*#\1#p' $(KUBECONFIG_LOCAL)):30080/?demo"
 
 render:              ## print exactly what Argo CD will apply
 	kubectl kustomize deploy/k8s
