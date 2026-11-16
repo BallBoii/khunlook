@@ -158,22 +158,22 @@ resolves to the `rag` Service's ClusterIP. From a pod in another namespace, use 
 ## 5. Deployments and their pods
 
 All in namespace `khunlook`. Replicas are set in each manifest under [deploy/k8s](../deploy/k8s);
-currently **1** each.
+currently **2** each.
 
 | Deployment | Image | Replicas | Container port | Calls (env) | Health checks |
 |------------|-------|----------|----------------|-------------|---------------|
-| `frontend` | `khunlook-frontend` (nginx) | 1 | 8080 | `api-gateway:8080` (nginx upstream) | `/healthz` |
-| `api-gateway` | `khunlook-api-gateway` | 1 | 8080 | `RAG_URL=http://rag:8080` | live `/healthz`, ready `/readyz` |
-| `rag` | `khunlook-rag` | 1 | 8080 | `VECTOR_DB_URL=http://vector-db:8080`, `MODEL_SERVICE_URL=http://model-service:8080` | live `/healthz`, ready `/readyz` |
-| `vector-db` | `khunlook-vector-db` | 1 | 8080 | nothing (index is inside the image) | live `/healthz`, ready `/readyz` |
-| `model-service` | `khunlook-model-service` | 1 | 8080 | `https://openrouter.ai` (internet) | live `/healthz`, ready `/readyz` |
+| `frontend` | `khunlook-frontend` (nginx) | 2 | 8080 | `api-gateway:8080` (nginx upstream) | `/healthz` |
+| `api-gateway` | `khunlook-api-gateway` | 2 | 8080 | `RAG_URL=http://rag:8080` | live `/healthz`, ready `/readyz` |
+| `rag` | `khunlook-rag` | 2 | 8080 | `VECTOR_DB_URL=http://vector-db:8080`, `MODEL_SERVICE_URL=http://model-service:8080` | live `/healthz`, ready `/readyz` |
+| `vector-db` | `khunlook-vector-db` | 2 | 8080 | nothing (index is inside the image) | live `/healthz`, ready `/readyz` |
+| `model-service` | `khunlook-model-service` | 2 | 8080 | `https://openrouter.ai` (internet) | live `/healthz`, ready `/readyz` |
 | `image-prepull` (DaemonSet) | all five + `pause` | 1 per Pi | none | nothing | |
 
 **Pod IPs.** Each pod gets the next free IP in the block of the node it lands on: a pod on
 pi-worker-2 gets `10.244.1.x`, on pi-worker-4 `10.244.2.x`. The **readiness check** decides whether
 a pod receives traffic: until `/readyz` answers OK, the pod is left out of its Service.
 
-Example *(snapshot, from when every service had 2 replicas)*:
+Example *(snapshot)*:
 
 | Pod | IP | Node |
 |-----|----|------|
