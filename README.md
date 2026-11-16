@@ -63,14 +63,71 @@ The full step-by-step guide, with troubleshooting, is
 
 ### 1. Prepare the hardware
 
-- Connect the Mac and the 5 Pis to the TP-Link router (cables recommended). Reserve fixed IPs:
-  master VM `192.168.0.10`, Pis `192.168.0.21`–`.25`
-  (or edit [`infra/ansible/inventory.ini`](infra/ansible/inventory.ini)).
-- **Master:** in UTM, create an **Ubuntu Server 24.04 ARM64** VM (4 CPU, 4 GB RAM, 30 GB disk) with
-  network mode **Bridged**, user `ubuntu`, OpenSSH enabled. Copy your SSH key: `ssh-copy-id ubuntu@192.168.0.10`.
-- **Workers:** flash each Pi with **Raspberry Pi OS Lite (64-bit)** using Raspberry Pi Imager. Set the
-  hostname `pi-worker-N`, user `pi`, and SSH with your public key.
-- On the Mac: `brew install ansible kubectl`, then check access with `cd infra/ansible && ansible all -m ping`.
+Connect the Mac and the 5 Pis to the TP-Link router. **Use cables**, at least for the Mac: the master VM
+shares the Mac's connection, and over Wi-Fi it keeps dropping off the network (see 1a).
+
+#### 1a. Master: Ubuntu VM in UTM
+
+1. Download **Ubuntu Server 24.04 LTS for ARM** (`ubuntu-24.04.x-live-server-arm64.iso`).
+2. UTM → **Create a New Virtual Machine** → **Virtualize** → **Linux** → select the ISO.
+   Hardware: **4 CPU cores, 4096 MB RAM**, storage **30 GB** (less fills up and Kubernetes stops scheduling pods).
+3. **Before the first boot**, open the VM's settings → **Network**:
+
+   | Setting | Value | Why |
+   |---------|-------|-----|
+   | Network Mode | **Bridged (Advanced)** | The VM gets its own IP on the router's LAN, so the Pis can reach it. *Shared Network* (NAT) does **not** work: the Pis could not connect to the master |
+   | Bridged Interface | the Mac's **Ethernet** adapter (e.g. `en2`, "USB 10/100/1000 LAN") | Bridging over **Wi-Fi (`en0`) is unreliable**: the router stops delivering to the VM after a while ("Host is down") |
+   | Emulated Network Card | **virtio-net-pci** | fastest, supported by Ubuntu out of the box |
+   | MAC Address | leave it, but **write it down** | the router uses it to give the VM a fixed IP (1c) |
+
+   Check which interface is the Ethernet adapter on the Mac: `networksetup -listallhardwareports`.
+4. Install Ubuntu: user `ubuntu`, hostname `k8s-master`, tick **Install OpenSSH server**. After
+   installing, eject the ISO (*CD/DVD → Clear*) and reboot.
+5. **Keep the Mac awake and on power** while the cluster runs: run `caffeinate -dimsu` in a terminal
+   and leave it open. If the Mac sleeps, the VM stops and so does the whole cluster.
+
+#### 1b. Workers: flash the Pis
+
+Flash each Pi with **Raspberry Pi OS Lite (64-bit)** using Raspberry Pi Imager. In *Edit settings*: hostname
+`pi-worker-N` (1–5), user `pi`, enable SSH with your Mac's public key. Plug in the cable and boot.
+
+#### 1c. Find each machine's IP and make it permanent
+
+1. Open the router's admin page **http://192.168.0.1** and log in.
+2. Go to **DHCP → DHCP Client List** (on some models *Network → DHCP Server → Client List*). It lists every
+   connected device with its **hostname, MAC address and IP**:
+
+   | Client name | MAC address | IP (example) | Which machine |
+   |-------------|-------------|--------------|---------------|
+   | `k8s-master` | the MAC you wrote down in UTM | `192.168.0.106` | master VM |
+   | `pi-worker-2` | starts with `b8:27:eb`, `dc:a6:32`, `d8:3a:dd` or `2c:cf:67` (Raspberry Pi) | `192.168.0.103` | Pi 2 |
+   | `pi-worker-3` | (Raspberry Pi) | `192.168.0.104` | Pi 3 |
+   | … | | | |
+
+   No hostname shown? Match by MAC: on the VM run `ip link`, on a Pi `ip link show eth0`. You can also
+   read the IP on the machine itself: `ip -4 addr` (VM) or `hostname -I` (Pi).
+3. Go to **DHCP → Address Reservation** → **Add New** for **each** machine: its MAC address and the IP it
+   has now → *Enabled* → **Save**. Without a reservation the IP can change after a reboot. **The master's IP
+   must never change**: it is written into the cluster certificates, and a new IP means rebuilding the
+   cluster. (Leave *ARP Binding* off; only the reservation is needed.)
+4. Reboot the VM and the Pis, then check the client list shows the same IPs.
+5. Put the IPs in [`infra/ansible/inventory.ini`](infra/ansible/inventory.ini):
+   ```ini
+   [master]
+   k8s-master  ansible_host=192.168.0.106 ansible_user=ubuntu
+
+   [workers]
+   pi-worker-2 ansible_host=192.168.0.103
+   pi-worker-3 ansible_host=192.168.0.104
+   ```
+
+#### 1d. Check access from the Mac
+
+```bash
+brew install ansible kubectl
+ssh-copy-id ubuntu@192.168.0.106                 # master: log in with your key from now on
+cd infra/ansible && ansible all -m ping          # every machine answers "pong"
+```
 
 ### 2. Prepare GitHub (once per repository)
 
@@ -112,8 +169,10 @@ kubectl -n khunlook get pods -o wide  # 2 pods per service, spread over the Pis
 make argocd-password                  # Argo CD login (user: admin)
 ```
 
-- **Chatbot:** http://192.168.0.10:30080/?demo
-- **Argo CD:** https://192.168.0.10:30443
+Use your master's IP from step 1c:
+
+- **Chatbot:** http://192.168.0.106:30080/?demo
+- **Argo CD:** https://192.168.0.106:30443
 
 ### 6. Deploy a change
 

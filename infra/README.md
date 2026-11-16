@@ -43,15 +43,28 @@ IPs, Services, DNS and ports in detail: [docs/network.md](../docs/network.md).
 
 ## 2. Network plan
 
-Connect everything to the router by cable (Wi-Fi works, but cables are more reliable for the demo). In the router's
-admin page (http://192.168.0.1 → *DHCP → Address Reservation*), give each machine a fixed IP:
+Connect everything to the router by cable. The Mac in particular must be on a cable: the master VM is
+bridged onto the Mac's connection, and a VM bridged over Wi-Fi keeps dropping off the network.
+
+Each machine gets its IP from the router. Find it, then make it permanent, in the router's admin page
+**http://192.168.0.1**:
+
+1. **DHCP → DHCP Client List** shows every device's hostname, MAC address and current IP. Pick out
+   `k8s-master` (its MAC is shown in UTM's network settings) and the Pis (hostnames `pi-worker-N`;
+   Raspberry Pi MACs start with `b8:27:eb`, `dc:a6:32`, `d8:3a:dd` or `2c:cf:67`). You can also ask the
+   machine itself: `ip -4 addr` on the VM, `hostname -I` on a Pi.
+2. **DHCP → Address Reservation → Add New**: each machine's MAC + its IP → *Enabled* → **Save**.
+   Leave *ARP Binding* off; it is not needed.
+3. Reboot the machines and check the client list shows the same IPs.
+
+Example (this cluster):
 
 | Host | IP | User | Notes |
 |------|----|------|-------|
-| `k8s-master` (UTM VM) | 192.168.0.10 | `ubuntu` | **Must never change**: it is baked into the cluster certificates |
-| `pi-worker-1` … `pi-worker-5` | 192.168.0.21 … .25 | `pi` | |
+| `k8s-master` (UTM VM) | 192.168.0.106 | `ubuntu` | **Must never change**: it is baked into the cluster certificates |
+| `pi-worker-2`, `-3`, `-4` | 192.168.0.103, .104, .105 | `pi` | from the client list |
 
-Using other IPs or users? Edit [`ansible/inventory.ini`](ansible/inventory.ini) to match.
+Put the IPs in [`ansible/inventory.ini`](ansible/inventory.ini).
 
 ## 3. Master: Ubuntu VM in UTM
 
@@ -61,15 +74,18 @@ it directly, which rules out NAT and Docker Desktop.
 1. Download **Ubuntu Server 24.04 LTS for ARM** (`ubuntu-24.04.x-live-server-arm64.iso`).
 2. UTM → **Create a New Virtual Machine** → **Virtualize** → **Linux** → select the ISO.
 3. Hardware: **4 CPU cores, 4096 MB RAM**. Storage: **30 GB**.
-4. Before the first boot, open the VM's settings → **Network** → Network Mode **Bridged (Advanced)** →
-   Bridged Interface = the Mac interface that is connected to the TP-Link router (`en0` / the USB
-   Ethernet adapter). Note the VM's **MAC address** shown there for the DHCP reservation.
+4. Before the first boot, open the VM's settings → **Network**:
+   - Network Mode: **Bridged (Advanced)**. *Shared Network* (NAT) hides the VM from the Pis and does not work.
+   - Bridged Interface: the Mac's **Ethernet** adapter that is cabled to the router (find it with
+     `networksetup -listallhardwareports`; on a MacBook `en0` is **Wi-Fi**, so don't pick it).
+   - Emulated Network Card: **virtio-net-pci**.
+   - Note the VM's **MAC address** shown there for the DHCP reservation (step 2).
 5. Install Ubuntu: user `ubuntu`, hostname `k8s-master`, tick **Install OpenSSH server**. No snaps needed.
    After installing, eject the ISO (CD/DVD → Clear) and reboot.
-6. On the router, reserve **192.168.0.10** for the VM's MAC, then reboot the VM and check:
+6. On the router, reserve the VM's IP (e.g. **192.168.0.106**) for the VM's MAC, then reboot the VM and check:
    ```bash
-   ssh-copy-id ubuntu@192.168.0.10      # from the Mac
-   ssh ubuntu@192.168.0.10 'ip -4 addr show | grep 192.168.0.10 && sudo -n true && echo sudo-ok'
+   ssh-copy-id ubuntu@192.168.0.106      # from the Mac
+   ssh ubuntu@192.168.0.106 'ip -4 addr show | grep 192.168.0.106 && sudo -n true && echo sudo-ok'
    ```
    If `sudo -n true` fails, allow passwordless sudo:
    `echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/ubuntu`.
@@ -186,8 +202,8 @@ kubectl -n khunlook get pods -o wide       # 10 app pods on the Pis + 5 image-pr
 make argocd-password                       # Argo CD admin password
 ```
 
-- **App:** http://192.168.0.10:30080/?demo (`?demo` shows which pods served each request)
-- **Argo CD:** https://192.168.0.10:30443 (user `admin`; accept the self-signed certificate). The app
+- **App:** http://192.168.0.106:30080/?demo (`?demo` shows which pods served each request)
+- **Argo CD:** https://192.168.0.106:30443 (user `admin`; accept the self-signed certificate). The app
   `khunlook` should be **Synced / Healthy**.
 
 ## 9. Deploying changes (day to day)
@@ -208,7 +224,7 @@ make argocd-password                       # Argo CD admin password
 1. **Automatic deployment.** Show the Argo CD UI (Synced). Push a small visible change, e.g. a text in
    `services/frontend/site/index.html`. Show the Actions run, the `deploy:` commit, then Argo CD rolling
    the new frontend pods. Reload the page.
-2. **Requests through ≥ 2 containers.** Open `http://192.168.0.10:30080/?demo` and ask a question. The
+2. **Requests through ≥ 2 containers.** Open `http://192.168.0.106:30080/?demo` and ask a question. The
    served-by chain lists frontend → api-gateway → rag → vector-db + model-service pods, which are on different Pis.
 3. **Fault tolerance.** In a terminal:
    ```bash
