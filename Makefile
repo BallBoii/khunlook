@@ -101,7 +101,7 @@ cluster:             ## build/refresh the whole cluster + Argo CD (needs ansible
 
 cluster-reset:       ## WIPE the cluster on the master and every Pi (then `make cluster` rebuilds it)
 	@read -p "Delete the Kubernetes cluster on ALL nodes? [y/N] " ok && [ "$$ok" = y ]
-	cd infra/ansible && ansible all --ask-vault-pass -m shell -a 'kubeadm reset -f; rm -rf /etc/cni/net.d; ip link delete cni0; ip link delete flannel.1; true'
+	cd infra/ansible && ansible all --ask-vault-pass -m shell -a 'kubeadm reset -f; rm -rf /etc/cni/net.d; ip link delete cni0; ip link delete flannel.1; systemctl restart containerd; true'
 
 render:              ## print exactly what Argo CD will apply
 	kubectl kustomize deploy/k8s
